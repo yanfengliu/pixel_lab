@@ -19,6 +19,8 @@ export function FramesStrip() {
   const selectedSourceId = useStore((s) => s.selectedSourceId);
   const selectedFrameIndex = useStore((s) => s.selectedFrameIndex);
   const setSelectedFrameIndex = useStore((s) => s.setSelectedFrameIndex);
+  const onionSkin = useStore((s) => s.onionSkin);
+  const setOnionSkin = useStore((s) => s.setOnionSkin);
 
   const source: Source | undefined = useMemo(
     () =>
@@ -37,6 +39,17 @@ export function FramesStrip() {
 
   return (
     <div className="frames-strip" role="list" aria-label="Frames">
+      <button
+        className={`onion-skin-toggle${onionSkin ? ' active' : ''}`}
+        title="Onion skin: show previous frame underneath (sequences only)"
+        aria-label="Onion skin"
+        aria-pressed={onionSkin}
+        onClick={() => setOnionSkin(!onionSkin)}
+      >
+        <span className="glyph" aria-hidden="true">
+          {'◐'}
+        </span>
+      </button>
       {frames.length === 0 ? (
         <div className="empty">
           {source

@@ -64,6 +64,7 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
   const selection = useStore((s) => s.selection);
   const setSelection = useStore((s) => s.setSelection);
   const clearSelection = useStore((s) => s.clearSelection);
+  const onionSkin = useStore((s) => s.onionSkin);
 
   const frameIdx = selectedFrameIndex[source.id] ?? 0;
 
@@ -73,6 +74,14 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
     source.kind === 'sheet'
       ? bitmap
       : (prepared[source.id]?.frames[frameIdx] ?? bitmap);
+
+  // Onion-skin source: the previous frame of a sequence, if any.
+  // Sheets have no "previous frame" concept (a single canvas — the slicing
+  // rects aren't an animation timeline), so onion skin is a no-op there.
+  const onionSkinFrame: RawImage | null =
+    onionSkin && source.kind === 'sequence' && frameIdx > 0
+      ? (prepared[source.id]?.frames[frameIdx - 1] ?? null)
+      : null;
 
   useEffect(() => {
     if (canvasRef.current) drawImageToCanvas(canvasRef.current, paintTarget);
@@ -106,10 +115,18 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
         height: paintTarget.height * zoom,
       }}
     >
+      {onionSkinFrame ? (
+        <OnionSkinLayer img={onionSkinFrame} zoom={zoom} />
+      ) : null}
       <canvas
         ref={canvasRef}
         className="canvas-image"
-        style={{ width: paintTarget.width * zoom, height: paintTarget.height * zoom }}
+        style={{
+          width: paintTarget.width * zoom,
+          height: paintTarget.height * zoom,
+          position: 'relative',
+          zIndex: 1,
+        }}
       />
       <RectsOverlay rects={rects} zoom={zoom} onClickRect={
         source.kind === 'sheet' && activeTool !== 'slice'
@@ -141,6 +158,34 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Under-layer showing the previous frame's pixels at reduced alpha so the
+ * user can see what came before the current frame. Lives beneath the
+ * `canvas-image` layer in paint order via DOM position + `z-index: 0`.
+ * The image canvas has its own position/z-index set so it paints on top.
+ */
+function OnionSkinLayer({ img, zoom }: { img: RawImage; zoom: number }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (ref.current) drawImageToCanvas(ref.current, img);
+  }, [img]);
+  return (
+    <canvas
+      ref={ref}
+      className="onion-skin-layer"
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: img.width * zoom,
+        height: img.height * zoom,
+        pointerEvents: 'none',
+        opacity: 0.3,
+      }}
+    />
   );
 }
 

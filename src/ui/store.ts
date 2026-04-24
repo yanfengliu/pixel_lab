@@ -65,6 +65,14 @@ export interface StoreState {
    */
   selection: { sourceId: Id; frameIndex: number; sel: Selection } | null;
 
+  /**
+   * Global onion-skin toggle. When true, the Canvas renders the previous
+   * frame of a sequence source at reduced alpha underneath the current
+   * frame (Aseprite-style). No-op for sheet sources — they have no
+   * "previous frame" in the sequence sense.
+   */
+  onionSkin: boolean;
+
   // Actions
   newProject: (name: string) => void;
   loadProject: (project: Project) => void;
@@ -106,6 +114,9 @@ export interface StoreState {
     sel: { sourceId: Id; frameIndex: number; sel: Selection } | null,
   ) => void;
   clearSelection: () => void;
+
+  // Onion skin.
+  setOnionSkin: (b: boolean) => void;
 
   // Undo/redo. `beginStroke` returns a closure that, when called,
   // computes a delta from the snapshot+current frame and pushes it
@@ -167,6 +178,7 @@ export const useStore = create<StoreState>((set) => ({
   undoStacks: {},
   redoStacks: {},
   selection: null,
+  onionSkin: false,
 
   newProject: (name) =>
     set({
@@ -522,6 +534,8 @@ export const useStore = create<StoreState>((set) => ({
   setSelection: (sel) => set({ selection: sel }),
   clearSelection: () => set({ selection: null }),
 
+  setOnionSkin: (b) => set({ onionSkin: b }),
+
   beginStroke: (sourceId, frameIndex) => {
     // Snapshot the current pixels so commit can compute a delta.
     const state = useStore.getState();
@@ -691,5 +705,6 @@ export function resetStore(): void {
     undoStacks: {},
     redoStacks: {},
     selection: null,
+    onionSkin: false,
   });
 }

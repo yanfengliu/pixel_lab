@@ -246,6 +246,28 @@ input[type="number"] { width: 60px; }
   min-height: 56px;
   align-items: center;
 }
+.frames-strip .onion-skin-toggle {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 48px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.frames-strip .onion-skin-toggle:hover { border-color: var(--accent); }
+.frames-strip .onion-skin-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #1b2333;
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.frames-strip .onion-skin-toggle .glyph { font-size: 18px; line-height: 1; }
 .frames-strip .frame-thumb {
   position: relative;
   width: 48px;
