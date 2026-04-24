@@ -13,6 +13,16 @@ Pointer: devlog entry, file, or test that illustrates it.
 
 ---
 
+## Serialized state must be refreshed on every mutation, not just the first — 2026-04-24
+Context: `Source.editedFrames` was the only serialized per-source pixel buffer, but the store only materialized it on the first stroke and then silently diverged from the live `sheetBitmaps[id]` / `prepared.frames[i]` on every subsequent paint. Save/reload dropped strokes 2..N; sheet exports showed stale pixels on any re-slice.
+Lesson: if a buffer is both "the authoritative serialization source" and "the thing the user edits through a different handle," keep them in sync on every commit — don't rely on first-edit materialization plus implicit aliasing. Explicit `syncEditedFrames(target)` on stroke commit, undo, and redo removes the whole class of bug and is trivial to test.
+Pointer: `src/ui/store.ts:syncEditedFrames`, `test/integration/save-reload.test.ts`.
+
+## In-place mutations need an explicit render signal for React — 2026-04-24
+Context: Canvas, OnionSkinLayer, and frame thumbnails all painted their DOM canvases inside `useEffect(..., [img])`. Strokes mutate `img.data` in place, so the `img` identity never changes, so the effect never fires — undo/redo left the canvas stuck on the pre-op pixels until an unrelated re-render refreshed it.
+Lesson: for any React effect that consumes a mutable buffer, include a monotonic counter in the deps that bumps on every in-place mutation. The counter lives in the store where the mutation happens and can be wired through props to child canvases. Don't rely on reference equality for a buffer whose whole point is mutation.
+Pointer: `src/ui/store.ts:renderCounters`, `test/ui/canvas-reactivity.test.tsx`.
+
 ## Node `Buffer` is not polyfilled by Vite; pngjs/browser needs the `buffer` shim — 2026-04-24
 Context: `src/core/png.ts` used `Buffer.from(...)` directly. This runs fine under vitest (Node) but throws `ReferenceError: Buffer is not defined` in the Vite production bundle. The tests never caught it because they never exercised the browser path.
 Lesson: any code that runs in both Node and the browser must source `Buffer` from the `buffer` npm package (not Node's global). Always smoke-check the production bundle for `"Buffer is not defined"` literals if you touch encoder/decoder code.
