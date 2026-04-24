@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from './store';
 import { decodeImport } from '../io/file';
 import { filesFromDrop } from '../io/drag-drop';
@@ -23,8 +23,84 @@ export function Shell() {
 
   const [zoom, setZoom] = useState(4);
   const [dragging, setDragging] = useState(false);
+  const [panning, setPanning] = useState(false);
   const [sliceError, setSliceError] = useState<string | null>(null);
   const handleSliceError = useCallback((msg: string) => setSliceError(msg), []);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const panRef = useRef<
+    | { startClientX: number; startClientY: number; scrollLeft: number; scrollTop: number }
+    | null
+  >(null);
+
+  const ZOOM_MIN = 1;
+  const ZOOM_MAX = 16;
+
+  // Scroll-wheel zooms (anchored at cursor), middle-button drags pan.
+  // Attached natively so wheel preventDefault actually stops the
+  // viewport scroll — React wheel synthetic events are passive.
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const rect = vp!.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const contentX = vp!.scrollLeft + mouseX;
+      const contentY = vp!.scrollTop + mouseY;
+      setZoom((oldZoom) => {
+        const step = e.deltaY < 0 ? 1 : -1;
+        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, oldZoom + step));
+        if (newZoom === oldZoom) return oldZoom;
+        // Adjust scroll so the content point under the cursor stays put
+        // after the zoom ratio is applied. Schedule after React commits
+        // so the inner canvas has already resized.
+        requestAnimationFrame(() => {
+          const ratio = newZoom / oldZoom;
+          vp!.scrollLeft = contentX * ratio - mouseX;
+          vp!.scrollTop = contentY * ratio - mouseY;
+        });
+        return newZoom;
+      });
+    }
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    return () => vp.removeEventListener('wheel', onWheel);
+  }, []);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const p = panRef.current;
+      const vp = viewportRef.current;
+      if (!p || !vp) return;
+      vp.scrollLeft = p.scrollLeft - (e.clientX - p.startClientX);
+      vp.scrollTop = p.scrollTop - (e.clientY - p.startClientY);
+    }
+    function onUp(e: MouseEvent) {
+      if (e.button !== 1 && panRef.current === null) return;
+      panRef.current = null;
+      setPanning(false);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  function handleViewportMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.button !== 1) return;
+    const vp = viewportRef.current;
+    if (!vp) return;
+    e.preventDefault(); // stop Windows auto-scroll cursor
+    panRef.current = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      scrollLeft: vp.scrollLeft,
+      scrollTop: vp.scrollTop,
+    };
+    setPanning(true);
+  }
 
   const selected = selectedId
     ? project.sources.find((s) => s.id === selectedId)
@@ -81,7 +157,11 @@ export function Shell() {
       </div>
       <SourcesPanel />
       <div className="canvas-zone">
-        <div className="canvas-viewport">
+        <div
+          ref={viewportRef}
+          className={`canvas-viewport${panning ? ' panning' : ''}`}
+          onMouseDown={handleViewportMouseDown}
+        >
           {selected && selectedBitmap ? (
             <Canvas
               source={selected}

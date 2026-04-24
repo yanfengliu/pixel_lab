@@ -53,9 +53,15 @@ await assert(await pencilBtn.count() > 0, 'pencil button missing');
 log('3', 'click + New Blank');
 await page.getByRole('button', { name: /new blank/i }).click();
 
-log('4', 'switch to Animation tab, accept default 32x32 x 8');
+log('4', 'switch to Animation tab, override dims to 128x128 x 4 so zoom can overflow the viewport');
 // Radio labels in the dialog.
 await page.getByLabel(/animation/i).check();
+// Find the width/height inputs and set to 128 (default is 32).
+const dialog = page.locator('[role="dialog"], .modal, .new-blank-dialog').first();
+const widthInput = dialog.getByLabel(/width/i).first();
+const heightInput = dialog.getByLabel(/height/i).first();
+await widthInput.fill('128');
+await heightInput.fill('128');
 await page.getByRole('button', { name: /^create$/i }).click();
 
 log('5', 'wait for canvas and assert source is now a sequence');
@@ -107,7 +113,68 @@ const afterUndo = await countOpaque();
 log('9a', `post-undo opaque pixels: ${afterUndo}`);
 await assert(afterUndo === 0, `undo should revert to 0 opaque, got ${afterUndo}`);
 
-log('9', 'screenshots written to test/smoke/screenshots/');
+log('10', 'wheel zoom: spin mouse wheel over canvas, canvas width should grow');
+const canvasWidthBefore = await page.evaluate(() => {
+  const c = document.querySelector('canvas.canvas-image');
+  return c ? parseInt(c.style.width, 10) : -1;
+});
+await page.mouse.move(box.x + 40, box.y + 40);
+await page.mouse.wheel(0, -200); // two wheel notches up
+await page.waitForTimeout(80);
+const canvasWidthAfter = await page.evaluate(() => {
+  const c = document.querySelector('canvas.canvas-image');
+  return c ? parseInt(c.style.width, 10) : -1;
+});
+log('10a', `canvas width: ${canvasWidthBefore} -> ${canvasWidthAfter}`);
+await assert(canvasWidthAfter > canvasWidthBefore, 'wheel should have zoomed in');
+
+log('11', 'middle-button pan: zoom way in first so content overflows');
+// Zoom ~12 notches up to guarantee the canvas content exceeds the viewport.
+for (let i = 0; i < 12; i++) {
+  await page.mouse.wheel(0, -100);
+}
+await page.waitForTimeout(80);
+const vpScrollBefore = await page.evaluate(() => {
+  const v = document.querySelector('.canvas-viewport');
+  if (!v) return null;
+  // Scroll halfway so we can see movement in both directions.
+  v.scrollLeft = Math.max(0, Math.floor((v.scrollWidth - v.clientWidth) / 2));
+  v.scrollTop = Math.max(0, Math.floor((v.scrollHeight - v.clientHeight) / 2));
+  return { left: v.scrollLeft, top: v.scrollTop };
+});
+const vpBox = await page.locator('.canvas-viewport').boundingBox();
+await assert(vpBox !== null, 'viewport missing');
+await page.mouse.move(vpBox.x + 100, vpBox.y + 100);
+await page.mouse.down({ button: 'middle' });
+await page.mouse.move(vpBox.x + 30, vpBox.y + 40, { steps: 5 });
+await page.mouse.up({ button: 'middle' });
+await page.waitForTimeout(80);
+const vpScrollAfter = await page.evaluate(() => {
+  const v = document.querySelector('.canvas-viewport');
+  return v ? { left: v.scrollLeft, top: v.scrollTop } : null;
+});
+log('11a', `viewport scroll ${JSON.stringify(vpScrollBefore)} -> ${JSON.stringify(vpScrollAfter)}`);
+await assert(
+  vpScrollAfter.left !== vpScrollBefore.left || vpScrollAfter.top !== vpScrollBefore.top,
+  'middle-button drag should have scrolled the viewport',
+);
+
+log('12', 'color panel must not show a horizontal scrollbar');
+const hasHScroll = await page.evaluate(() => {
+  const cp = document.querySelector('.color-panel');
+  if (!cp) return null;
+  // Horizontal scrollbar is visible when scrollWidth > clientWidth AND
+  // computed overflow-x allows it. Our CSS sets overflow-x:hidden, but
+  // this verifies the scrollbar isn't rendered regardless.
+  return cp.scrollWidth > cp.clientWidth + 1;
+});
+log('12a', `color panel content overflows horizontally? ${hasHScroll}`);
+await assert(hasHScroll === false, 'color panel should not overflow horizontally');
+
+log('13', 'final screenshot');
+await page.screenshot({ path: join(OUT, 'viewport-final.png'), fullPage: true });
+
+log('done', 'screenshots written to test/smoke/screenshots/');
 
 await browser.close();
 log('ok', 'smoke passed');
