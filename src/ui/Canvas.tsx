@@ -128,6 +128,13 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
           zIndex: 1,
         }}
       />
+      {zoom >= 8 ? (
+        <PixelGridOverlay
+          width={paintTarget.width}
+          height={paintTarget.height}
+          zoom={zoom}
+        />
+      ) : null}
       <RectsOverlay rects={rects} zoom={zoom} onClickRect={
         source.kind === 'sheet' && activeTool !== 'slice'
           ? (i) => setSelectedFrameIndex(source.id, i)
@@ -158,6 +165,43 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
         }}
       />
     </div>
+  );
+}
+
+/**
+ * 1-device-pixel grid rendered on top of the canvas via CSS
+ * `linear-gradient`s — cheaper than a third canvas and DOM-renderable
+ * under jsdom. Only mounted at zoom >= 8 (below that the lines would
+ * dominate the pixel art).
+ *
+ * The gradients describe two 1-px-wide hard stops per tile, one
+ * vertical and one horizontal, repeated at `zoom` × `zoom` cells.
+ */
+function PixelGridOverlay({
+  width,
+  height,
+  zoom,
+}: {
+  width: number;
+  height: number;
+  zoom: number;
+}) {
+  const line = 'rgba(0, 0, 0, 0.25)';
+  return (
+    <div
+      className="pixel-grid-overlay"
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: width * zoom,
+        height: height * zoom,
+        pointerEvents: 'none',
+        zIndex: 2,
+        backgroundImage: `linear-gradient(to right, ${line} 1px, transparent 1px), linear-gradient(to bottom, ${line} 1px, transparent 1px)`,
+        backgroundSize: `${zoom}px ${zoom}px`,
+      }}
+    />
   );
 }
 
