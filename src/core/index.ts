@@ -44,6 +44,11 @@ export {
   computeDelta,
   redoDelta,
   undoDelta,
+  drawLine,
+  drawRectOutline,
+  drawRectFilled,
+  drawEllipseOutline,
+  drawEllipseFilled,
 } from './drawing';
 
 export type { DecodedGifFrame, GifFramePatch } from './gif';
