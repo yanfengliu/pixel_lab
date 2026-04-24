@@ -67,3 +67,51 @@ Atlas packing uses MaxRects with 1px transparent padding between frames
 frame's declared size stays equal to its slice rect so pivots are
 predictable for consumers. If a future use case demands trimming, add it
 as a per-frame opt-in rather than a default.
+
+---
+
+## KAD-006 — Source.kind renamed `'gif'` → `'sequence'`; provenance carried separately
+
+**Date:** 2026-04-24
+**Status:** Accepted
+
+`Source.kind` now describes *structure* (`'sheet'` = single mutable
+bitmap; `'sequence'` = N mutable bitmaps) rather than *provenance*. An
+imported GIF becomes `{kind: 'sequence', importedFrom: 'gif', gifFrames: [...]}`;
+a user-created blank animation becomes `{kind: 'sequence', importedFrom: 'blank'}`.
+
+Rationale: once blank animations are editable and GIF frames are
+individually editable, the runtime semantics of both are identical — a
+sequence of `RawImage` frames the user can paint on. Keeping the kind
+tied to the file format it came from forced sprinkled `if kind === 'gif'`
+branches for behavior that should key on "is this multi-frame?" instead.
+Provenance is still needed for two reasons: displaying "imported from X"
+in the UI, and preserving per-frame delay metadata for GIFs. Both ride on
+the source as separate fields (`importedFrom`, `gifFrames`), not conflated
+into the kind.
+
+`DecodedImport` gains `format: 'png' | 'gif'` for the same reason — the
+file-format detection stays distinct from the resulting source kind.
+
+---
+
+## KAD-007 — `editedFrames` alongside `imageBytes` (don't overwrite the original)
+
+**Date:** 2026-04-24
+**Status:** Accepted
+
+When a user draws on an imported asset, the edited pixels are stored as
+`Source.editedFrames: RawImage[]` while the original `imageBytes` stays
+untouched. On reload, if `editedFrames` is present it is authoritative;
+otherwise behavior falls back to decoding `imageBytes` (v1 semantics).
+
+Rationale: (1) editing can never corrupt an imported asset — the user
+can always see / inspect what they brought in; (2) provenance survives
+in the project file even after extensive editing; (3) the v1 file
+format stays forward-compatible: a v2 file with no edits serializes
+identically to its v1 equivalent aside from the version bump.
+
+Tradeoff: `.pixellab.json` grows when frames are edited, because each
+edited frame is a base64-encoded PNG in addition to the original
+`imageBytes`. Accepted: project files are not bandwidth-sensitive, and
+the alternative (re-encoding + losing the original) is unrecoverable.

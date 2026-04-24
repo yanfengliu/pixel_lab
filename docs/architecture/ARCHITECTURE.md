@@ -46,16 +46,28 @@ Violations are blockers in code review.
 
 ## Data model
 
-See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` for the full
-schema. Key invariants:
+See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` for the v1
+schema and `docs/superpowers/specs/2026-04-24-pixel-drawing-design.md` for
+the v2 extensions. Key invariants:
 
-- A `Project` owns a list of `Source`s and a list of `Animation`s.
-- Each `Source` exposes `preparedFrames: ImageData[]` regardless of kind
-  (sheet or gif), produced by its slicer.
+- A `Project` owns a list of `Source`s and a list of `Animation`s. Project
+  file format is v2 since 2026-04-24 (KAD-006 + KAD-007).
+- `Source.kind` describes *structure* (KAD-006):
+  - `'sheet'` — single bitmap, sliced into frames by grid / auto / manual.
+  - `'sequence'` — N editable bitmaps. Imported GIFs and new blank
+    animations both land here; provenance rides on `Source.importedFrom`.
+- `Source.imageBytes` holds the original imported bytes (or empty for
+  blank sources). `Source.editedFrames?: RawImage[]` (KAD-007) is the
+  authoritative pixel data once the user has drawn anything; absent =
+  decode from `imageBytes` (the v1 code path).
+- Each `Source` exposes `preparedFrames: RawImage[]` (`prepareSheet` /
+  `prepareSequence`) as the uniform frame-level view downstream code
+  consumes. `prepareSheet` respects `editedFrames[0]` when present;
+  `prepareSequence` respects `editedFrames` when present.
 - A `FrameRef` points into `preparedFrames` by `(sourceId, rectIndex)`.
   Re-slicing updates every animation that references that source.
-- GIF sources fix slicing to `{kind: 'gif'}` and derive frames from the
-  decoded GIF directly.
+- `sequence` sources fix slicing to `{kind: 'sequence'}` and derive one
+  frame per bitmap directly.
 
 ## Export pipeline
 
