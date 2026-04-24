@@ -8,7 +8,6 @@ export default defineConfig({
     include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
     environmentMatchGlobs: [
       ['test/ui/**', 'jsdom'],
-      ['test/integration/**', 'jsdom'],
     ],
     setupFiles: ['./test/setup.ts'],
   },
