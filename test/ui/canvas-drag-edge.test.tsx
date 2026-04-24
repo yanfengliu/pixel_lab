@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, fireEvent, cleanup } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, cleanup, act } from '@testing-library/react';
 import { Canvas } from '../../src/ui/Canvas';
 import { useStore, resetStore } from '../../src/ui/store';
 
@@ -108,5 +108,90 @@ describe('Canvas — I11: marquee rect math uses full w,h', () => {
     expect(sel.sel.rect).toEqual({ x: 3, y: 3, w: 1, h: 1 });
     expect(sel.sel.mask).toHaveLength(1);
     expect(sel.sel.mask[0]).toBe(1);
+  });
+});
+
+describe('Canvas — R2-I12: shape preview cleared on tool switch mid-drag', () => {
+  // Stub HTMLCanvasElement.prototype.getContext so we can observe calls
+  // to `clearRect` on the preview canvas. jsdom has no real 2D context,
+  // so Canvas.tsx's drawPreview/clearPreview currently noop silently under
+  // tests. By returning a spyable fake context we can verify that the
+  // preview-clear path actually ran after a tool switch.
+  const clearRectCalls: { count: number } = { count: 0 };
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+
+  beforeEach(() => {
+    resetStore();
+    cleanup();
+    clearRectCalls.count = 0;
+    // Minimal 2D-context stub sufficient for drawPreview's code paths.
+    const fakeCtx = {
+      clearRect: () => {
+        clearRectCalls.count += 1;
+      },
+      save: () => {},
+      restore: () => {},
+      setLineDash: () => {},
+      strokeRect: () => {},
+      fillRect: () => {},
+      putImageData: () => {},
+      createImageData: (w: number, h: number) => ({
+        width: w,
+        height: h,
+        data: new Uint8ClampedArray(w * h * 4),
+        colorSpace: 'srgb' as PredefinedColorSpace,
+      }),
+      drawImage: () => {},
+      strokeStyle: '',
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (HTMLCanvasElement.prototype as any).getContext = function (kind: string) {
+      if (kind === '2d') return fakeCtx;
+      return null;
+    };
+  });
+
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+  });
+
+  it('switching activeTool mid-shape-drag invokes preview clearRect', () => {
+    useStore.getState().setActiveTool('rectOutline');
+    useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });
+    const { container } = mountForSheet();
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    // Start a shape drag.
+    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    // Reset the counter so we only count clears triggered by the switch.
+    clearRectCalls.count = 0;
+    // Switch tools mid-drag (simulates B/E/I/G/etc. keyboard shortcuts).
+    act(() => {
+      useStore.getState().setActiveTool('pencil');
+    });
+    // The tool switch must trigger a preview clear — otherwise a ghost
+    // shape lingers on the overlay until the next mousemove.
+    expect(clearRectCalls.count).toBeGreaterThan(0);
+  });
+
+  it('switching activeTool mid-shape-drag does not rasterize the abandoned shape', () => {
+    useStore.getState().setActiveTool('rectOutline');
+    useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });
+    const { bmp, container } = mountForSheet();
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    // Switch tools; cleanup clears dragRef.
+    act(() => {
+      useStore.getState().setActiveTool('pencil');
+    });
+    fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5 });
+    // Bitmap must stay transparent — no rect pixels were written.
+    for (let i = 0; i < bmp.data.length; i += 4) {
+      expect(bmp.data[i + 3]).toBe(0);
+    }
   });
 });

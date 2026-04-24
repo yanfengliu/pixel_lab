@@ -379,11 +379,15 @@ function PaintOverlay({
   // Re-render preview whenever selection, tool state, or brush params
   // change even if no drag is active. Without primary/brushSize/opacity
   // in deps, mid-drag color or size tweaks wouldn't refresh the shape
-  // preview until the next mousemove.
+  // preview until the next mousemove. `activeTool` is included so a tool
+  // switch mid-drag re-paints the preview (R2-I12) — otherwise the
+  // abandoned shape/marquee/slice rectangle stays ghosted on screen until
+  // the next mousemove lands. (The paint-overlay useEffect cleanup also
+  // calls clearPreview as a belt-and-suspenders safeguard.)
   useEffect(() => {
     drawPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, bitmap.width, bitmap.height, zoom, primary, brushSize, opacity]);
+  }, [selection, bitmap.width, bitmap.height, zoom, primary, brushSize, opacity, activeTool]);
 
   function eventToPixel(clientX: number, clientY: number) {
     const rect = rootRef.current?.getBoundingClientRect();
@@ -801,9 +805,16 @@ function PaintOverlay({
       // deleted, project replaced), commit whatever pixels the drag
       // has already written so undo can recover them and editedFrames
       // stays consistent with the live bitmap.
+      //
+      // Additionally, clear the preview so any active shape/marquee/slice
+      // ghost disappears alongside the drag teardown (R2-I12). The
+      // `activeTool` dep on the drawPreview effect above is the primary
+      // mechanism; this clearPreview is a belt-and-suspenders safeguard
+      // for cleanup paths that don't go through a drawPreview re-run.
       const d = dragRef.current;
       if (d && 'commit' in d) d.commit();
       dragRef.current = null;
+      clearPreview();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, bitmap, brushSize, primary, opacity, slicing, selection]);
