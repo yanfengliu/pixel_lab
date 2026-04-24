@@ -33,6 +33,16 @@ export { slice, sliceGrid, sliceAuto, sliceManual } from './slicers';
 
 export { prepareSheet, prepareSequence } from './source';
 
+export type { Brush } from './drawing';
+export {
+  stampDot,
+  stampLine,
+  stampErase,
+  stampEraseLine,
+  floodFill,
+  samplePixel,
+} from './drawing';
+
 export type { DecodedGifFrame, GifFramePatch } from './gif';
 export { compositeGifFrames, decodeGif } from './gif';
 
