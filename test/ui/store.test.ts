@@ -361,6 +361,25 @@ describe('store: setSelectedFrameIndex', () => {
     useStore.getState().setSelectedFrameIndex(src.id, 1);
     expect(useStore.getState().selection).toBeNull();
   });
+
+  it('keeps the selection on a no-op same-index setSelectedFrameIndex', () => {
+    const src = useStore.getState().createBlankSource({
+      kind: 'sequence',
+      name: 'anim',
+      width: 8,
+      height: 8,
+      frameCount: 3,
+    });
+    useStore.getState().setSelectedFrameIndex(src.id, 1);
+    useStore.getState().setSelection({
+      sourceId: src.id,
+      frameIndex: 1,
+      sel: { rect: { x: 0, y: 0, w: 2, h: 2 }, mask: new Uint8Array(4).fill(1) },
+    });
+    // Same-index "select" should not nuke the selection.
+    useStore.getState().setSelectedFrameIndex(src.id, 1);
+    expect(useStore.getState().selection).not.toBeNull();
+  });
 });
 
 describe('store: selection', () => {

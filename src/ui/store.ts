@@ -522,9 +522,15 @@ export const useStore = create<StoreState>((set) => ({
 
   setSelectedFrameIndex: (sourceId, index) =>
     set((s) => {
-      // Selection is per-frame, not persisted across switches.
+      // Selection is per-frame, not persisted across switches. Keep the
+      // current selection on no-op same-index calls so the UI can fire
+      // redundant selects without clobbering user state.
+      const previous = s.selectedFrameIndex[sourceId];
+      const frameChanged = previous !== index;
       const nextSelection =
-        s.selection && s.selection.sourceId === sourceId ? null : s.selection;
+        frameChanged && s.selection && s.selection.sourceId === sourceId
+          ? null
+          : s.selection;
       return {
         selectedFrameIndex: { ...s.selectedFrameIndex, [sourceId]: index },
         selection: nextSelection,
@@ -562,19 +568,18 @@ export const useStore = create<StoreState>((set) => ({
       if (!after) return;
       const delta = computeDelta(sourceId, frameIndex, before, after);
       if (!delta) return;
-      // Materialize editedFrames on first commit if the source had none,
-      // mirroring the spec's "first-edit materialization" rule. For
-      // sheets this is the single bitmap; for sequences it is each
-      // prepared frame.
-      const sources = cur.project.sources.map((src) => {
-        if (src.id !== sourceId) return src;
-        if (src.editedFrames && src.editedFrames.length > 0) return src;
-        const seed: RawImage[] =
-          src.kind === 'sheet'
-            ? [cloneRaw(after)]
-            : (cur.prepared[sourceId]?.frames ?? []).map(cloneRaw);
-        return { ...src, editedFrames: seed };
-      });
+      // Materialize or update editedFrames on every commit so that
+      // serialization and subsequent re-slicing always see the latest
+      // pixels. For sheets this is frame[0]; for sequences it is the
+      // edited frame index (other frames stay as their current buffers,
+      // cloned on first-edit to break aliasing with prepared.frames).
+      const sources = syncEditedFrames(
+        cur.project.sources,
+        cur.prepared,
+        sourceId,
+        frameIndex,
+        after,
+      );
       // For sheets we also need to refresh prepared.frames so the new
       // pixels land in subsequent slicing operations / exports.
       let prepared = cur.prepared;
@@ -613,11 +618,24 @@ export const useStore = create<StoreState>((set) => ({
     const target = getEditTarget(cur, source, delta.frameIndex);
     if (!target) return;
     undoDelta(target, delta);
+    // Keep editedFrames in sync with the undone pixels so save/reload
+    // reflects the undone state (not the pre-undo state).
+    const sources = syncEditedFrames(
+      cur.project.sources,
+      cur.prepared,
+      sourceId,
+      delta.frameIndex,
+      target,
+    );
     let prepared = cur.prepared;
     if (source.kind === 'sheet') {
+      const updatedSource = sources.find((x) => x.id === sourceId)!;
       const bitmap = cur.sheetBitmaps[sourceId];
       if (bitmap) {
-        prepared = { ...prepared, [sourceId]: prepareSheet(source, bitmap) };
+        prepared = {
+          ...prepared,
+          [sourceId]: prepareSheet(updatedSource, bitmap),
+        };
       }
     } else {
       // Replace shell to push downstream re-read.
@@ -625,6 +643,7 @@ export const useStore = create<StoreState>((set) => ({
       if (p) prepared = { ...prepared, [sourceId]: { ...p } };
     }
     set({
+      project: { ...cur.project, sources },
       undoStacks: { ...cur.undoStacks, [sourceId]: newUndo },
       redoStacks: { ...cur.redoStacks, [sourceId]: newRedo },
       prepared,
@@ -643,17 +662,29 @@ export const useStore = create<StoreState>((set) => ({
     const target = getEditTarget(cur, source, delta.frameIndex);
     if (!target) return;
     redoDelta(target, delta);
+    const sources = syncEditedFrames(
+      cur.project.sources,
+      cur.prepared,
+      sourceId,
+      delta.frameIndex,
+      target,
+    );
     let prepared = cur.prepared;
     if (source.kind === 'sheet') {
+      const updatedSource = sources.find((x) => x.id === sourceId)!;
       const bitmap = cur.sheetBitmaps[sourceId];
       if (bitmap) {
-        prepared = { ...prepared, [sourceId]: prepareSheet(source, bitmap) };
+        prepared = {
+          ...prepared,
+          [sourceId]: prepareSheet(updatedSource, bitmap),
+        };
       }
     } else {
       const p = cur.prepared[sourceId];
       if (p) prepared = { ...prepared, [sourceId]: { ...p } };
     }
     set({
+      project: { ...cur.project, sources },
       undoStacks: { ...cur.undoStacks, [sourceId]: newUndo },
       redoStacks: { ...cur.redoStacks, [sourceId]: newRedo },
       prepared,
@@ -663,10 +694,12 @@ export const useStore = create<StoreState>((set) => ({
 
 /**
  * The canonical paint target for a (source, frameIndex). Sheets paint
- * on the cached `sheetBitmap` (which is shared with `editedFrames[0]`
- * after first commit), so painting outside the current grid cells still
- * lands in pixels that subsequent slicing will pick up. Sequences paint
- * directly on the per-frame prepared bitmap.
+ * on the cached `sheetBitmap`, so painting outside the current grid
+ * cells still lands in pixels that subsequent slicing will pick up.
+ * Sequences paint directly on the per-frame prepared bitmap. After each
+ * stroke commit, `syncEditedFrames` clones the paint target into
+ * `source.editedFrames[frameIndex]`, keeping the authoritative buffer
+ * fresh so save/reload sees the latest pixels.
  */
 function getEditTarget(
   state: StoreState,
@@ -685,6 +718,36 @@ function cloneRaw(img: RawImage): RawImage {
     height: img.height,
     data: new Uint8ClampedArray(img.data),
   };
+}
+
+/**
+ * Mirror the live paint target into `source.editedFrames[frameIndex]`
+ * so the authoritative pixel data stays fresh across stroke commits,
+ * undo, and redo. If the source had no `editedFrames`, materialize it:
+ * for sheets that's `[target]`; for sequences it's a clone of every
+ * prepared frame (so frames we didn't edit still carry pixel data).
+ */
+function syncEditedFrames(
+  sources: ReadonlyArray<Source>,
+  prepared: Record<Id, PreparedSource>,
+  sourceId: Id,
+  frameIndex: number,
+  target: RawImage,
+): Source[] {
+  return sources.map((src) => {
+    if (src.id !== sourceId) return src;
+    const existing = src.editedFrames;
+    if (!existing || existing.length === 0) {
+      const seed: RawImage[] =
+        src.kind === 'sheet'
+          ? [cloneRaw(target)]
+          : (prepared[sourceId]?.frames ?? []).map(cloneRaw);
+      return { ...src, editedFrames: seed };
+    }
+    const next = existing.slice();
+    next[frameIndex] = cloneRaw(target);
+    return { ...src, editedFrames: next };
+  });
 }
 
 export const getStore = useStore;
