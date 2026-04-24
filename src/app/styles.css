@@ -384,7 +384,6 @@ input[type="number"] { width: 60px; }
   inset: 0;
   pointer-events: none;
 }
-.overlay.manual { pointer-events: auto; cursor: crosshair; }
 .rect-outline {
   position: absolute;
   border: 1px solid var(--accent);
