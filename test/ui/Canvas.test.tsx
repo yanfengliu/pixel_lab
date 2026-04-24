@@ -337,4 +337,56 @@ describe('Canvas — slice-rect tool', () => {
     expect(slicing.rects).toHaveLength(1);
     expect(slicing.rects[0]).toEqual({ x: 1, y: 2, w: 5, h: 5 });
   });
+
+  it('contextmenu suppression only fires when a manual rect is hit (N-G1)', () => {
+    // Two manual rects, slice tool active. Right-click inside rect[0]
+    // must preventDefault (the slice tool will delete it via mousedown).
+    // Right-click on empty space must NOT preventDefault — browsers
+    // should still be free to show their context menu / DevTools etc.
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 'm', width: 16, height: 16 });
+    useStore.getState().selectSource(src.id);
+    useStore.getState().updateSlicing(src.id, {
+      kind: 'manual',
+      rects: [{ x: 0, y: 0, w: 4, h: 4 }],
+    });
+    useStore.getState().setActiveTool('slice');
+    const source = useStore
+      .getState()
+      .project.sources.find((x) => x.id === src.id)!;
+    const bmp = useStore.getState().sheetBitmaps[src.id]!;
+    const { container } = render(
+      <Canvas
+        source={source}
+        bitmap={bmp}
+        zoom={1}
+        onSlicingChange={(s) =>
+          useStore.getState().updateSlicing(src.id, s)
+        }
+      />,
+    );
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+
+    // Right-click inside the rect — preventDefault must fire.
+    const insideEvent = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 2,
+      clientY: 2,
+    });
+    overlay.dispatchEvent(insideEvent);
+    expect(insideEvent.defaultPrevented).toBe(true);
+
+    // Right-click outside the rect (empty space) — preventDefault must NOT fire.
+    const outsideEvent = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 10,
+      clientY: 10,
+    });
+    overlay.dispatchEvent(outsideEvent);
+    expect(outsideEvent.defaultPrevented).toBe(false);
+  });
 });

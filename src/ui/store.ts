@@ -641,7 +641,10 @@ export const useStore = create<StoreState>((set) => ({
     if (!stack || stack.length === 0) return;
     const delta = stack[stack.length - 1]!;
     const newUndo = stack.slice(0, -1);
-    const newRedo = [...(cur.redoStacks[sourceId] ?? []), delta];
+    // Cap the redo stack symmetrically with the undo-stack cap (N4). The
+    // redo stack is implicitly bounded by the undo-stack depth today, but
+    // explicit .slice keeps the invariant robust against future refactors.
+    const newRedo = [...(cur.redoStacks[sourceId] ?? []), delta].slice(-UNDO_CAP);
     const source = cur.project.sources.find((s) => s.id === sourceId);
     if (!source) return;
     const target = getEditTarget(cur, source, delta.frameIndex);
@@ -686,7 +689,8 @@ export const useStore = create<StoreState>((set) => ({
     if (!stack || stack.length === 0) return;
     const delta = stack[stack.length - 1]!;
     const newRedo = stack.slice(0, -1);
-    const newUndo = [...(cur.undoStacks[sourceId] ?? []), delta];
+    // Cap the undo stack on redo-push as well (N4). Parallel to beginStroke.
+    const newUndo = [...(cur.undoStacks[sourceId] ?? []), delta].slice(-UNDO_CAP);
     const source = cur.project.sources.find((s) => s.id === sourceId);
     if (!source) return;
     const target = getEditTarget(cur, source, delta.frameIndex);

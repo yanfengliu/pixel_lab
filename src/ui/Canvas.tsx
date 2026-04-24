@@ -89,9 +89,12 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
     if (canvasRef.current) drawImageToCanvas(canvasRef.current, paintTarget);
     // renderCounter bumps on every in-place pixel mutation (stroke
     // commit, undo, redo) so the DOM canvas refreshes even though
-    // paintTarget.data's reference didn't change.
+    // paintTarget.data's reference didn't change. `paintTarget.data` is
+    // intentionally not in the dep list — the Uint8ClampedArray reference
+    // is stable across in-place mutations (that's the whole point of the
+    // renderCounter), so it would be a no-op dep (N1).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paintTarget, paintTarget.data, renderCounter]);
+  }, [paintTarget, renderCounter]);
 
   const rects = useMemo<Rect[]>(() => {
     try {
@@ -904,9 +907,17 @@ function PaintOverlay({
         style={{ cursor, pointerEvents: 'auto' }}
         onMouseDown={handleDown}
         onContextMenu={(e) => {
-          // Suppress the browser menu only when the slice tool may want
-          // to act on right-click.
-          if (activeTool === 'slice') e.preventDefault();
+          // Suppress the browser menu only when the slice tool would
+          // actually consume this right-click (hit-test matches a manual
+          // rect). Otherwise let the normal browser menu appear so the
+          // user can still right-click on empty space / non-manual slicing
+          // without UI being swallowed (N-G1).
+          if (activeTool !== 'slice' || slicing.kind !== 'manual') return;
+          const p = eventToPixel(e.clientX, e.clientY);
+          if (!p) return;
+          if (slicing.rects.some((r) => pointInRect(p, r))) {
+            e.preventDefault();
+          }
         }}
       />
     </>

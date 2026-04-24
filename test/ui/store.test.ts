@@ -329,6 +329,28 @@ describe('store: undo/redo', () => {
     expect(stack.length).toBe(200);
   });
 
+  it('caps the redo stack symmetrically with the undo stack (N4)', () => {
+    // The redo stack grows during undo; ensure it is capped to the same
+    // limit as the undo stack so future refactors can't accidentally
+    // uncap memory. 210 strokes → 200 in undo → undo all → 200 in redo.
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    for (let i = 0; i < 210; i++) {
+      const commit = useStore.getState().beginStroke(src.id, 0);
+      const bmp = useStore.getState().sheetBitmaps[src.id]!;
+      setPixel(bmp, i % 4, Math.floor(i / 4) % 4, i & 255, 0, 0, 255);
+      commit();
+    }
+    // Undo everything; redo grows as undo shrinks.
+    while ((useStore.getState().undoStacks[src.id] ?? []).length > 0) {
+      useStore.getState().undo(src.id);
+    }
+    const redo = useStore.getState().redoStacks[src.id]!;
+    expect(redo.length).toBeLessThanOrEqual(200);
+    expect(redo.length).toBe(200);
+  });
+
   it('beginStroke + commit + undo on a sequence frame', () => {
     const src = useStore.getState().createBlankSource({
       kind: 'sequence',
