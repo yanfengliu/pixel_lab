@@ -700,16 +700,9 @@ function PaintOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, bitmap, brushSize, primary, opacity, slicing, selection]);
 
-  // ESC clears an active selection (mimics Aseprite).
-  useEffect(() => {
-    function onKey(ev: KeyboardEvent) {
-      if (ev.key === 'Escape' && selection) {
-        clearSelection();
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selection, clearSelection]);
+  // ESC (clear selection) is owned by the ToolPalette's global keymap so
+  // the complete shortcut table lives in one place. No Canvas-local ESC
+  // handler needed.
 
   const cursor = (() => {
     switch (activeTool) {

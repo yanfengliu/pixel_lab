@@ -82,6 +82,7 @@ export function ToolPalette() {
   const swapColors = useStore((s) => s.swapColors);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
+  const clearSelection = useStore((s) => s.clearSelection);
 
   // The slice tool is ghosted unless the selected source has manual
   // slicing; shortcut `S` and clicks both respect that.
@@ -111,6 +112,11 @@ export function ToolPalette() {
       }
       // Bare-key shortcuts.
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      // ESC clears any active marquee selection (Aseprite parity).
+      if (ev.key === 'Escape') {
+        if (useStore.getState().selection) clearSelection();
+        return;
+      }
       if (k === 's') {
         // Guard: slice tool requires manual slicing.
         if (sliceAvailable) setActiveTool('slice');
@@ -135,7 +141,15 @@ export function ToolPalette() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setActiveTool, setBrushSize, swapColors, undo, redo, sliceAvailable]);
+  }, [
+    setActiveTool,
+    setBrushSize,
+    swapColors,
+    undo,
+    redo,
+    sliceAvailable,
+    clearSelection,
+  ]);
 
   return (
     <div className="tool-palette" role="toolbar" aria-label="Drawing tools">
