@@ -4,59 +4,49 @@
 
 ## Current state
 
-v1 shipped on `main`. Branch `agent/pixel-drawing` carries the Phase 1
-foundation + Phase 2 (shapes + selection) of the pixel-drawing feature
-(data-model migration v1 → v2, paint primitives, shape primitives
-(line/rect/ellipse), selection extract/paste, tool-dispatched Canvas
-with shape previews and marquee/move/slice drag flows, 12-button
-ToolPalette grouped by function). 200/200 tests pass, `npx tsc
---noEmit` clean, `npx vite build` green (~143 kB gz).
+v1 shipped on `main`. Branch `agent/pixel-drawing` carries Phases 1–3
+of the pixel-drawing feature: data-model v1→v2 migration, paint +
+shape + selection primitives, tool-dispatched Canvas, 12-button
+ToolPalette, onion-skin toggle, pixel grid at zoom ≥ 8, full
+Aseprite-style shortcut map. 232/232 tests pass, `npx tsc --noEmit`
+clean, `npx vite build` green (~143 kB gz).
 
 ## What exists
 
-- `src/core/` — DOM-free domain: types (now with `SequenceSlicing`,
-  `Source.editedFrames`, `Source.importedFrom`, `Project.swatches`,
-  `Project.version: 2`), `RawImage` + `RGBA` utilities, grid/auto/
-  manual slicers + sequence dispatcher guard, GIF compositing adapter,
-  MaxRects packer, project + manifest serializers with v1 → v2
-  migration and base64-PNG `editedFrames` round-trip, PNG
-  encode/decode, export orchestrator, and `core/drawing/`:
-  `stampDot` / `stampLine` / `stampErase` / `stampEraseLine`,
-  `floodFill`, `samplePixel`, `StrokeDelta` with
-  `computeDelta` / `undoDelta` / `redoDelta`, `drawLine` /
-  `drawRectOutline` / `drawRectFilled` / `drawEllipseOutline` /
-  `drawEllipseFilled` (Zingl midpoint ellipse), `Selection` +
-  `extractSelection` / `pasteSelection`.
-- `src/io/` — `detectFormat` (PNG/GIF magic-byte), `decodeImport`
-  (returns `{kind, format, frames, delaysMs, bytes}`), ZIP via fflate,
-  FS Access API with anchor-download fallback, drag-drop helper.
+- `src/core/` — DOM-free domain: types (v2: `SequenceSlicing`,
+  `Source.editedFrames`, `Source.importedFrom`, `Project.swatches`),
+  `RawImage`/`RGBA`, slicers + sequence dispatcher, GIF adapter,
+  MaxRects packer, v1→v2 serializers with base64-PNG `editedFrames`
+  round-trip, PNG codec, export orchestrator, `core/drawing/`:
+  brush stamping, flood fill, sample, shapes (line/rect/ellipse),
+  selection extract/paste, stroke deltas.
+- `src/io/` — `detectFormat`, `decodeImport`, ZIP via fflate, FS
+  Access API + anchor-download fallback, drag-drop helper.
 - `src/ui/` — Zustand store with drawing state (activeTool,
   primary/secondaryColor, opacity, brushSize, selectedFrameIndex,
-  undo/redo stacks, per-frame marquee selection) plus
-  `createBlankSource`, `beginStroke`, `undo`, `redo`,
-  `setSelection` / `clearSelection`, swatch actions. Shell is a
-  5-zone grid with a left rail (ToolPalette + ColorPanel),
-  SourcesPanel, tool-dispatched Canvas (with an overlay preview
-  canvas for shape drags, marquee, move ghost, and slice drag),
-  AnimationsPanel, and the frames zone (FramesStrip + PreviewBar).
-  ToolPalette offers 12 tools grouped into paint / shapes /
-  selection / slice with the slice button ghosted when slicing is
-  not `manual`. `NewBlankSource` modal dialog wired to TopBar.
-  `usePlayback` hook shared between PreviewBar and any future
-  animation consumer.
-- `src/app/` — composition root: `main.tsx` + `App.tsx` + styles.
-- KADs 001–005 + one drift-log entry. Phase 1 KAD-006 / KAD-007
+  undo/redo stacks, per-frame marquee selection, **onionSkin**);
+  actions include `createBlankSource`, `beginStroke`, `undo`,
+  `redo`, `setSelection`/`clearSelection`, swatch actions,
+  `setOnionSkin`. Shell: 5-zone grid (left rail = ToolPalette +
+  ColorPanel, SourcesPanel, Canvas, AnimationsPanel, frames zone).
+  Canvas layers bottom-up: onion-skin (sequences only), frame
+  canvas, pixel grid at zoom ≥ 8, rects overlay, paint overlay
+  with shape/marquee/move/slice preview. ToolPalette owns the full
+  shortcut map (B/E/I/G/L/U/M/V/S/X/`[`/`]`/Ctrl+Z/Ctrl+Shift+Z/
+  ESC). `FramesStrip` includes the onion-skin toggle.
+  `NewBlankSource` modal wired to TopBar. `usePlayback` hook shared
+  with PreviewBar.
+- `src/app/` — composition root.
+- KADs 001–005 + one drift-log entry. KAD-006 / KAD-007 still
   pending a doc pass.
-- Detailed devlog at `docs/devlog/detailed/2026-04-23_2026-04-24.md`.
-- Lessons at `docs/learning/lessons.md`: Buffer polyfill in Vite;
-  store placement vs one-way deps; cache decoded bitmaps.
+- Detailed devlog: `docs/devlog/detailed/2026-04-23_2026-04-24.md`.
+- Lessons: `docs/learning/lessons.md`.
 
 ## Known follow-ups
 
 - In-browser smoke test of `npm run dev` — still blocked by sandbox.
 - Canvas visual pixel-diff harness (jsdom has no 2D context).
-- KAD-006 / KAD-007 entries in `docs/architecture/decisions.md` +
-  drift-log rows.
-- HSV color picker (Phase 1 ships hex + swatches).
-- Phase 3 (onion skin, pixel grid, shortcut map completeness).
+- KAD-006 / KAD-007 entries + drift-log rows.
+- HSV color picker (Phase 1 shipped hex + swatches).
+- Multi-reviewer code review for the branch.
 - v1.1 carry-overs: row-grouping UI, manual rect resize handles.
