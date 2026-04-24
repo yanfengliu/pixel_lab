@@ -43,6 +43,55 @@ describe('compositeGifFrames', () => {
     expect(out[1]!.image.data[1]).toBe(255); // green in frame 1
   });
 
+  it('normalizes a 0cs GIF delay to 100ms like browsers do', () => {
+    // 0cs delays would otherwise run at uncontrolled speed; browsers
+    // clamp to ~100ms and we match that convention.
+    const frames: GifFramePatch[] = [
+      {
+        patch: patchRGBA(0, 0, 0, 255, 1, 1),
+        dims: { left: 0, top: 0, width: 1, height: 1 },
+        delay: 0,
+        disposalType: 1,
+      },
+    ];
+    const out = compositeGifFrames(frames, 1, 1);
+    expect(out[0]!.delayMs).toBe(100);
+  });
+
+  it('restores canvas state when disposalType is 3 (restore-to-previous)', () => {
+    // Frame 1 paints a red square in the top-left. Frame 2 has
+    // disposalType=3, paints blue at (1,1). After frame 2's output the
+    // canvas restores to its pre-frame-2 state so frame 3 only sees the
+    // red pixel.
+    const frames: GifFramePatch[] = [
+      {
+        patch: patchRGBA(255, 0, 0, 255, 1, 1),
+        dims: { left: 0, top: 0, width: 1, height: 1 },
+        delay: 0,
+        disposalType: 1,
+      },
+      {
+        patch: patchRGBA(0, 0, 255, 255, 1, 1),
+        dims: { left: 1, top: 1, width: 1, height: 1 },
+        delay: 0,
+        disposalType: 3,
+      },
+      {
+        patch: patchRGBA(0, 0, 0, 0, 1, 1), // transparent (no pixel written)
+        dims: { left: 0, top: 0, width: 1, height: 1 },
+        delay: 0,
+        disposalType: 1,
+      },
+    ];
+    const out = compositeGifFrames(frames, 2, 2);
+    // Frame 2 includes both red and blue (just after draw, before restore).
+    expect(out[1]!.image.data[0]).toBe(255);
+    expect(out[1]!.image.data[(1 * 2 + 1) * 4 + 2]).toBe(255);
+    // Frame 3 sees the pre-frame-2 state: red only, no blue.
+    expect(out[2]!.image.data[0]).toBe(255);
+    expect(out[2]!.image.data[(1 * 2 + 1) * 4 + 2]).toBe(0);
+  });
+
   it('persists pixels across frames when disposal is leave-previous', () => {
     // Frame 1 paints only top-left pixel; frame 2 paints only bottom-right.
     // With disposalType 0/1, frame 2's output must still show the top-left

@@ -80,6 +80,15 @@ export function SlicerControls({ source, zoom, onZoomChange, onSlicingChange }: 
   );
 }
 
+/** Clamp a user-typed number to [min,max] and fall back to fallback for NaN/empty. */
+function readNum(raw: string, min: number, max: number, fallback: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  if (n < min) return min;
+  if (n > max) return max;
+  return Math.floor(n);
+}
+
 function GridInputs({
   slicing,
   onChange,
@@ -89,14 +98,15 @@ function GridInputs({
 }) {
   const upd = (patch: Partial<typeof slicing>) =>
     onChange({ ...slicing, ...patch });
+  const MAX = 4096;
   return (
     <>
-      <label>cellW <input type="number" min={1} value={slicing.cellW} onChange={(e) => upd({ cellW: Number(e.target.value) })} /></label>
-      <label>cellH <input type="number" min={1} value={slicing.cellH} onChange={(e) => upd({ cellH: Number(e.target.value) })} /></label>
-      <label>cols <input type="number" min={1} value={slicing.cols} onChange={(e) => upd({ cols: Number(e.target.value) })} /></label>
-      <label>rows <input type="number" min={1} value={slicing.rows} onChange={(e) => upd({ rows: Number(e.target.value) })} /></label>
-      <label>offX <input type="number" value={slicing.offsetX} onChange={(e) => upd({ offsetX: Number(e.target.value) })} /></label>
-      <label>offY <input type="number" value={slicing.offsetY} onChange={(e) => upd({ offsetY: Number(e.target.value) })} /></label>
+      <label>cellW <input type="number" min={1} value={slicing.cellW} onChange={(e) => upd({ cellW: readNum(e.target.value, 1, MAX, slicing.cellW) })} /></label>
+      <label>cellH <input type="number" min={1} value={slicing.cellH} onChange={(e) => upd({ cellH: readNum(e.target.value, 1, MAX, slicing.cellH) })} /></label>
+      <label>cols <input type="number" min={1} value={slicing.cols} onChange={(e) => upd({ cols: readNum(e.target.value, 1, MAX, slicing.cols) })} /></label>
+      <label>rows <input type="number" min={1} value={slicing.rows} onChange={(e) => upd({ rows: readNum(e.target.value, 1, MAX, slicing.rows) })} /></label>
+      <label>offX <input type="number" value={slicing.offsetX} onChange={(e) => upd({ offsetX: readNum(e.target.value, 0, MAX, slicing.offsetX) })} /></label>
+      <label>offY <input type="number" value={slicing.offsetY} onChange={(e) => upd({ offsetY: readNum(e.target.value, 0, MAX, slicing.offsetY) })} /></label>
     </>
   );
 }
@@ -112,8 +122,8 @@ function AutoInputs({
     onChange({ ...slicing, ...patch });
   return (
     <>
-      <label>minGapPx <input type="number" min={0} value={slicing.minGapPx} onChange={(e) => upd({ minGapPx: Number(e.target.value) })} /></label>
-      <label>alpha &gt; <input type="number" min={0} max={255} value={slicing.alphaThreshold} onChange={(e) => upd({ alphaThreshold: Number(e.target.value) })} /></label>
+      <label>minGapPx <input type="number" min={0} value={slicing.minGapPx} onChange={(e) => upd({ minGapPx: readNum(e.target.value, 0, 256, slicing.minGapPx) })} /></label>
+      <label>alpha &gt; <input type="number" min={0} max={255} value={slicing.alphaThreshold} onChange={(e) => upd({ alphaThreshold: readNum(e.target.value, 0, 255, slicing.alphaThreshold) })} /></label>
     </>
   );
 }

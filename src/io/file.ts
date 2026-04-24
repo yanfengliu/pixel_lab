@@ -14,18 +14,24 @@ export interface DecodedImport {
 }
 
 export function detectKind(bytes: Uint8Array): SourceKind {
-  // GIF87a / GIF89a
+  // GIF87a or GIF89a — full 6-byte magic. "GIF8" alone is not specific
+  // enough and would let "GIF80" etc. reach parseGIF, throwing a vague
+  // error at the user.
   if (
     bytes.length >= 6 &&
     bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
-    bytes[3] === 0x38
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
   ) {
     return 'gif';
   }
-  // PNG signature 89 50 4E 47
+  // PNG signature 89 50 4E 47 0D 0A 1A 0A
   if (
-    bytes.length >= 4 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e &&
+    bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a &&
+    bytes[6] === 0x1a && bytes[7] === 0x0a
   ) {
     return 'sheet';
   }

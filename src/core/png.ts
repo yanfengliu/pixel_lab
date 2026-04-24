@@ -1,9 +1,12 @@
 import { PNG } from 'pngjs/browser';
+import { Buffer } from 'buffer';
 import type { RawImage } from './image';
 
 /**
- * Encode a RawImage to PNG bytes. Uses pngjs' browser entry so the same
- * function runs under Node (via pngjs-internal Buffer polyfill) and Vite.
+ * PNG encode/decode. Uses pngjs/browser with an explicit `buffer` package
+ * import so the code runs identically under Node (vitest) and in the Vite
+ * production bundle. Native Node Buffer cannot be assumed in the browser,
+ * so we always go through the shim.
  */
 export function encodePng(img: RawImage): Uint8Array {
   const png = new PNG({ width: img.width, height: img.height });

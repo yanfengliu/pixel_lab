@@ -113,19 +113,41 @@ function fallbackOpen(opts: OpenPickerOptions): Promise<Uint8Array[]> {
     input.type = 'file';
     input.multiple = opts.multiple ?? false;
     input.accept = Object.values(opts.accept).flat().join(',');
+    // Firefox requires the input to be in the DOM before programmatic
+    // click fires the picker; detached inputs silently fail there. The
+    // node is hidden and removed once resolved/cancelled.
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '-9999px';
+    document.body.appendChild(input);
+    const cleanup = () => {
+      if (input.parentNode) input.parentNode.removeChild(input);
+    };
     input.onchange = async () => {
       try {
         const files = Array.from(input.files ?? []);
+        if (files.length === 0) {
+          cleanup();
+          resolve([]);
+          return;
+        }
         const bytes = await Promise.all(
           files.map(async (f) => new Uint8Array(await f.arrayBuffer())),
         );
+        cleanup();
         resolve(bytes);
       } catch (err) {
+        cleanup();
         reject(err);
       }
     };
-    // When the user cancels the dialog the change event may never fire, so
-    // we rely on the UI to provide retry affordance rather than time-out here.
+    // Modern browsers fire 'cancel' when the dialog is dismissed. Older
+    // browsers never fire anything on cancel — in that case the promise
+    // stays pending (acceptable for a user-cancelled interaction).
+    input.addEventListener('cancel', () => {
+      cleanup();
+      resolve([]);
+    });
     input.click();
   });
 }

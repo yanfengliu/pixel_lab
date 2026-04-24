@@ -72,8 +72,9 @@ export function packFrames(
     const placed = tryPack(ordered, size, padding);
     if (placed) {
       const atlas = createImage(size, size);
+      const byOrderedId = new Map(ordered.map((o) => [o.id, o]));
       for (const p of placed) {
-        const f = ordered.find((i) => i.id === p.id)!;
+        const f = byOrderedId.get(p.id)!;
         blit(atlas, f.image, p.x, p.y);
       }
       // Return placements in input order, not packing order.

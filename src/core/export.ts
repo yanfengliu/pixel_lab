@@ -28,10 +28,20 @@ function refKey(ref: FrameRef): string {
  */
 function assignFrameNames(project: Project): Map<string, string> {
   const names = new Map<string, string>();
+  const used = new Set<string>();
   for (const a of project.animations) {
     for (let i = 0; i < a.frames.length; i++) {
       const key = refKey(a.frames[i]!);
-      if (!names.has(key)) names.set(key, `${sanitize(a.name)}_${i}`);
+      if (names.has(key)) continue;
+      const base = `${sanitize(a.name)}_${i}`;
+      // Sanitize can collapse two distinct animation names into the same
+      // prefix (e.g. "walk" and "walk!"). Disambiguate with a numeric
+      // suffix so the manifest and frames/*.png filenames never collide.
+      let candidate = base;
+      let bump = 2;
+      while (used.has(candidate)) candidate = `${base}__${bump++}`;
+      used.add(candidate);
+      names.set(key, candidate);
     }
   }
   return names;

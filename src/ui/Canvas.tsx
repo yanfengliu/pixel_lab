@@ -9,9 +9,10 @@ interface Props {
   bitmap: RawImage;
   zoom: number;
   onSlicingChange: (slicing: Slicing) => void;
+  onSliceError?: (message: string) => void;
 }
 
-export function Canvas({ source, bitmap, zoom, onSlicingChange }: Props) {
+export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -22,10 +23,14 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange }: Props) {
     try {
       if (source.slicing.kind === 'gif') return [];
       return slice(bitmap, source.slicing);
-    } catch {
+    } catch (err) {
+      // Don't throw into the render — the user probably typed an invalid
+      // number. Surface to the caller so it can show a readable banner.
+      const msg = err instanceof Error ? err.message : String(err);
+      onSliceError?.(msg);
       return [];
     }
-  }, [bitmap, source.slicing]);
+  }, [bitmap, source.slicing, onSliceError]);
 
   const manual = source.slicing.kind === 'manual' ? source.slicing : null;
 
@@ -88,15 +93,16 @@ function ManualOverlay({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState<Rect | null>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  function eventToPixel(ev: React.MouseEvent): { x: number; y: number } | null {
+  function eventToPixel(
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number } | null {
     const rect = rootRef.current?.getBoundingClientRect();
     if (!rect) return null;
-    const x = Math.floor((ev.clientX - rect.left) / zoom);
-    const y = Math.floor((ev.clientY - rect.top) / zoom);
+    const x = Math.floor((clientX - rect.left) / zoom);
+    const y = Math.floor((clientY - rect.top) / zoom);
     return {
       x: Math.max(0, Math.min(bitmap.width - 1, x)),
       y: Math.max(0, Math.min(bitmap.height - 1, y)),
@@ -105,33 +111,48 @@ function ManualOverlay({
 
   function handleDown(ev: React.MouseEvent) {
     if (ev.button !== 0) return;
-    const p = eventToPixel(ev);
+    const p = eventToPixel(ev.clientX, ev.clientY);
     if (!p) return;
-    setDragStart(p);
+    dragStartRef.current = p;
     setDraft({ x: p.x, y: p.y, w: 1, h: 1 });
   }
 
-  function handleMove(ev: React.MouseEvent) {
-    if (!dragStart) return;
-    const p = eventToPixel(ev);
-    if (!p) return;
-    const x = Math.min(dragStart.x, p.x);
-    const y = Math.min(dragStart.y, p.y);
-    const w = Math.abs(p.x - dragStart.x) + 1;
-    const h = Math.abs(p.y - dragStart.y) + 1;
-    setDraft({ x, y, w, h });
-  }
-
-  function handleUp() {
-    if (draft && draft.w > 1 && draft.h > 1) {
-      onChange({
-        kind: 'manual',
-        rects: [...slicing.rects, draft],
+  // Track move/up on window so a drag that leaves the canvas or the
+  // browser window doesn't leave the UI stuck mid-drag.
+  useEffect(() => {
+    if (!draft) return;
+    const onMove = (ev: MouseEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      const p = eventToPixel(ev.clientX, ev.clientY);
+      if (!p) return;
+      const x = Math.min(start.x, p.x);
+      const y = Math.min(start.y, p.y);
+      const w = Math.abs(p.x - start.x) + 1;
+      const h = Math.abs(p.y - start.y) + 1;
+      setDraft({ x, y, w, h });
+    };
+    const onUp = () => {
+      const current = dragStartRef.current;
+      dragStartRef.current = null;
+      setDraft((d) => {
+        if (d && current) {
+          onChange({ kind: 'manual', rects: [...slicing.rects, d] });
+        }
+        return null;
       });
-    }
-    setDragStart(null);
-    setDraft(null);
-  }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    // slicing.rects intentionally excluded: onUp captures the latest value
+    // through the closure on the draft-side set; including it would detach
+    // and reattach the listeners on every rect add.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft !== null]);
 
   function removeRect(idx: number) {
     onChange({
@@ -145,9 +166,6 @@ function ManualOverlay({
       ref={rootRef}
       className="overlay manual"
       onMouseDown={handleDown}
-      onMouseMove={handleMove}
-      onMouseUp={handleUp}
-      onMouseLeave={handleUp}
     >
       {slicing.rects.map((r, i) => (
         <div

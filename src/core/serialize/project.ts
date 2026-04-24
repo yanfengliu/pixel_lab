@@ -42,14 +42,13 @@ export function projectToJson(project: Project): string {
 }
 
 export function projectFromJson(text: string): Project {
-  const parsed = JSON.parse(text) as ProjectJson;
-  if (parsed.version !== 1) {
-    throw new Error(`projectFromJson: unsupported version ${parsed.version}`);
-  }
+  const parsed = JSON.parse(text) as Partial<ProjectJson>;
+  validateProjectJson(parsed);
+  const p = parsed as ProjectJson;
   return {
     version: 1,
-    name: parsed.name,
-    sources: parsed.sources.map((s) => {
+    name: p.name,
+    sources: p.sources.map((s) => {
       const source: Source = {
         id: s.id,
         name: s.name,
@@ -62,6 +61,40 @@ export function projectFromJson(text: string): Project {
       if (s.gifFrames) source.gifFrames = s.gifFrames;
       return source;
     }),
-    animations: parsed.animations,
+    animations: p.animations,
   };
+}
+
+/**
+ * Lightweight structural validation for a pasted / loaded project JSON.
+ * Throws a descriptive error so the UI can surface it, rather than
+ * letting a missing field crash slicing/export with a cryptic stack.
+ */
+function validateProjectJson(v: Partial<ProjectJson>): void {
+  if (v.version !== 1) {
+    throw new Error(`projectFromJson: unsupported version ${String(v.version)}`);
+  }
+  if (typeof v.name !== 'string') throw new Error('projectFromJson: name must be a string');
+  if (!Array.isArray(v.sources)) throw new Error('projectFromJson: sources must be an array');
+  if (!Array.isArray(v.animations)) throw new Error('projectFromJson: animations must be an array');
+  for (const s of v.sources) {
+    if (!s || typeof s !== 'object') throw new Error('projectFromJson: source entry must be an object');
+    if (typeof s.id !== 'string') throw new Error('projectFromJson: source.id must be a string');
+    if (typeof s.imageBase64 !== 'string') {
+      throw new Error(`projectFromJson: source ${s.id} missing imageBase64`);
+    }
+    if (s.kind !== 'sheet' && s.kind !== 'gif') {
+      throw new Error(`projectFromJson: source ${s.id} has invalid kind "${String(s.kind)}"`);
+    }
+    if (!s.slicing || typeof s.slicing !== 'object') {
+      throw new Error(`projectFromJson: source ${s.id} missing slicing`);
+    }
+  }
+  for (const a of v.animations) {
+    if (!a || typeof a !== 'object') throw new Error('projectFromJson: animation entry must be an object');
+    if (typeof a.name !== 'string') throw new Error('projectFromJson: animation.name must be a string');
+    if (!Array.isArray(a.frames)) {
+      throw new Error(`projectFromJson: animation ${a.name} frames must be an array`);
+    }
+  }
 }

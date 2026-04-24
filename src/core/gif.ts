@@ -29,25 +29,41 @@ export function compositeGifFrames(
   const out: DecodedGifFrame[] = [];
 
   for (const f of frames) {
+    // disposalType 3 means "restore to the canvas state **before** this
+    // frame was drawn." Snapshot now so we can restore later without
+    // paying the snapshot cost for the far-more-common 0/1/2 cases.
+    const snapshot =
+      f.disposalType === 3
+        ? new Uint8ClampedArray(canvas.data)
+        : null;
+
     blitPatch(canvas, f.patch, f.dims.left, f.dims.top, f.dims.width, f.dims.height);
     out.push({
       image: cloneImage(canvas),
-      delayMs: Math.max(0, (f.delay | 0) * 10), // centiseconds -> ms
+      delayMs: gifDelayToMs(f.delay),
     });
 
-    // disposalType 2 = restore to background (clear region).
-    // disposalType 3 = restore to previous; we approximate as clear-region,
-    // which is fine for frame extraction. See ARCHITECTURE.
-    if (f.disposalType === 2 || f.disposalType === 3) {
+    if (f.disposalType === 2) {
       clearRect(canvas, f.dims.left, f.dims.top, f.dims.width, f.dims.height);
+    } else if (f.disposalType === 3 && snapshot) {
+      canvas.data.set(snapshot);
     }
   }
   return out;
 }
 
+/**
+ * GIF delay is in centiseconds. Browsers normalize 0 -> ~100ms because a
+ * 0-delay frame would otherwise run at uncontrolled speed. We mirror that
+ * convention so the in-tool preview matches how users see the GIF
+ * elsewhere.
+ */
+function gifDelayToMs(delayCs: number): number {
+  const ms = Math.max(0, (delayCs | 0) * 10);
+  return ms === 0 ? 100 : ms;
+}
+
 export function decodeGif(bytes: Uint8Array): DecodedGifFrame[] {
-  // Copy into a fresh ArrayBuffer so parseGIF sees a non-shared buffer
-  // regardless of the caller's source (e.g. fetch -> Uint8Array views).
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   const gif = parseGIF(buffer);

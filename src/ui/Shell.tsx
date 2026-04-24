@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useStore } from '../app/store';
+import { useCallback, useEffect, useState } from 'react';
+import { useStore } from './store';
 import { decodeImport } from '../io/file';
 import { filesFromDrop } from '../io/drag-drop';
 import { Canvas } from './Canvas';
@@ -19,6 +19,8 @@ export function Shell() {
 
   const [zoom, setZoom] = useState(4);
   const [dragging, setDragging] = useState(false);
+  const [sliceError, setSliceError] = useState<string | null>(null);
+  const handleSliceError = useCallback((msg: string) => setSliceError(msg), []);
 
   const selected = selectedId
     ? project.sources.find((s) => s.id === selectedId)
@@ -73,7 +75,11 @@ export function Shell() {
               source={selected}
               bitmap={selectedBitmap}
               zoom={zoom}
-              onSlicingChange={(s) => updateSlicing(selected.id, s)}
+              onSlicingChange={(s) => {
+                setSliceError(null);
+                updateSlicing(selected.id, s);
+              }}
+              onSliceError={handleSliceError}
             />
           ) : (
             <div className="empty" style={{ marginTop: 100 }}>
@@ -81,12 +87,20 @@ export function Shell() {
             </div>
           )}
         </div>
+        {sliceError ? (
+          <div className="empty" style={{ color: 'var(--danger)', padding: '4px 12px' }}>
+            Slicing error: {sliceError}
+          </div>
+        ) : null}
         {selected ? (
           <SlicerControls
             source={selected}
             zoom={zoom}
             onZoomChange={setZoom}
-            onSlicingChange={(s) => updateSlicing(selected.id, s)}
+            onSlicingChange={(s) => {
+              setSliceError(null);
+              updateSlicing(selected.id, s);
+            }}
           />
         ) : null}
       </div>

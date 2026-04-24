@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useStore, resetStore } from '../../src/app/store';
+import { useStore, resetStore } from '../../src/ui/store';
 import type { DecodedImport } from '../../src/io/file';
 import { createImage, setPixel } from '../../src/core/image';
 

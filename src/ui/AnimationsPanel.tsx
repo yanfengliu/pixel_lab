@@ -1,4 +1,4 @@
-import { useStore } from '../app/store';
+import { useStore } from './store';
 import type { FrameRef, Source } from '../core/types';
 import { slice } from '../core/slicers';
 
@@ -22,8 +22,11 @@ export function AnimationsPanel() {
 
   function handleAddAll() {
     if (!selectedSource) return;
-    const animId = selectedAnimId ?? addAnimation('new-anim').id;
     const refs = buildFrameRefs(selectedSource, prepared, sheetBitmaps);
+    if (refs.length === 0) return;
+    // Reuse the current animation if one is selected; create one only on
+    // demand so repeated clicks with no selection don't spawn orphan anims.
+    const animId = selectedAnimId ?? addAnimation('new-anim').id;
     appendFrames(animId, refs);
   }
 

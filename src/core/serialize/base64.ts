@@ -1,17 +1,21 @@
 /**
  * Cross-runtime base64 helpers. Under Node (vitest), Buffer is available.
- * In the browser, we use the global btoa/atob path via Uint8Array chunks.
+ * In the browser, we use the global btoa/atob path via 4 KiB chunks — any
+ * larger and some engines (notably older Safari) throw "Maximum call stack
+ * size exceeded" when spreading the chunk into String.fromCharCode.apply.
  */
+
+const CHUNK = 4096;
 
 export function bytesToBase64(bytes: Uint8Array): string {
   if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {
     return Buffer.from(bytes).toString('base64');
   }
   let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
+  for (let i = 0; i < bytes.length; i += CHUNK) {
     s += String.fromCharCode.apply(
       null,
-      Array.from(bytes.subarray(i, i + 0x8000)) as number[],
+      Array.from(bytes.subarray(i, i + CHUNK)) as number[],
     );
   }
   return btoa(s);

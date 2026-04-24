@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../app/store';
+import { useStore } from './store';
 import { drawImageToCanvas } from './rendering';
 import type { RawImage } from '../core/image';
 import type { Animation } from '../core/types';

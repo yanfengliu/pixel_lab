@@ -16,29 +16,33 @@ Violations are blockers in code review.
 - Owns: domain types (`Project`, `Source`, `Animation`, `FrameRef`), slicing
   algorithms (grid, auto, manual), GIF decoder adapter (calls `gifuct-js`
   behind a thin interface), atlas packer (MaxRects), serializers
-  (`.pixellab.json`, export manifest).
+  (`.pixellab.json`, export manifest), PNG encode/decode via the pure
+  `pngjs/browser` codec (no DOM required; works under Node and the Vite
+  bundle via the `buffer` polyfill).
 - **Never** imports from `io`, `ui`, or `app`.
 - Public entry: `src/core/index.ts`.
 
 ### `src/io/` — browser adapters
 
-- Owns: file picker (`<input type="file">`), drag-drop handlers, File
-  System Access API wrapper (with anchor-download fallback for
-  unsupporting browsers), ZIP bundling via `fflate`, canvas image decoding
-  (PNG → `ImageData`).
-- Depends on `core` types only; never imports from `ui` or `app`.
+- Owns: magic-byte PNG/GIF detection, drag-drop handlers, File System
+  Access API wrapper (with anchor-download fallback for unsupporting
+  browsers), ZIP bundling via `fflate`. Calls into `core/png` and
+  `core/gif` for actual decoding — io is pure plumbing of browser APIs.
+- Depends on `core` types and codecs only; never imports from `ui` or `app`.
 
-### `src/ui/` — React components
+### `src/ui/` — React components + UI state
 
-- React components, Zustand hooks. All business logic delegated to `core`.
-- Components are thin: props in, DOM out. No slicing math in components.
-- Visual tests use pixel diff against golden PNG fixtures under
-  `test/fixtures/`.
+- React components, Zustand store (`src/ui/store.ts`). UI components import
+  from `./store` within the same layer — no cross-layer cycle.
+- All domain logic delegated to `core`. Components are thin: props in,
+  DOM out. No slicing math in components; where a derived view needs a
+  pure helper (e.g. `slice(bitmap, config)`) it calls directly into
+  `core`.
 
 ### `src/app/` — composition root
 
-- Wires state store, top-level providers, and mounts `App` into `#root`.
-- Contains `src/main.tsx` entry and the global Zustand store.
+- `src/main.tsx` + `src/app/App.tsx`. Mounts `ui/Shell` into `#root` and
+  loads styles. No business logic; no state ownership.
 
 ## Data model
 

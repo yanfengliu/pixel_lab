@@ -38,7 +38,14 @@ export interface BuildManifestInput {
 
 export function buildManifest(input: BuildManifestInput): Manifest {
   const animations: Record<string, ManifestAnimation> = {};
+  const seen = new Set<string>();
   for (const a of input.animations) {
+    if (seen.has(a.name)) {
+      throw new Error(
+        `buildManifest: duplicate animation name "${a.name}" would overwrite in manifest.json; rename before export`,
+      );
+    }
+    seen.add(a.name);
     const frames = a.frames;
     const uniformFps = a.fps !== 'per-frame';
     if (uniformFps) {
@@ -48,12 +55,15 @@ export function buildManifest(input: BuildManifestInput): Manifest {
         frames: frames.map((f) => input.refToKey(f)),
       };
     } else {
+      // Per-frame timing: a missing durationMs would mean "instant", which
+      // browsers clamp to ~100ms anyway. Default to 100ms so consumers see
+      // a visible frame rather than a zero-duration one.
       animations[a.name] = {
         fps: null,
         loop: a.loop,
         frames: frames.map((f) => ({
           name: input.refToKey(f),
-          durationMs: f.durationMs ?? 0,
+          durationMs: f.durationMs ?? 100,
         })),
       };
     }

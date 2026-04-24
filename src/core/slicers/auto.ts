@@ -12,13 +12,15 @@ import type { AutoSlicing, Rect } from '../types';
 export function sliceAuto(img: RawImage, cfg: AutoSlicing): Rect[] {
   const { width, height } = img;
   const alphaMin = cfg.alphaThreshold;
+  // Union-find parent array. Initial value of -1 marks "own component,
+  // size 1". Non-opaque cells are ignored by the unions below so their
+  // initial value never participates.
   const parent = new Int32Array(width * height);
   for (let i = 0; i < parent.length; i++) parent[i] = -1;
 
   const find = (a: number): number => {
     let r = a;
     while (parent[r]! >= 0) r = parent[r]!;
-    // path compression
     while (a !== r) {
       const next = parent[a]!;
       parent[a] = r;
@@ -43,13 +45,6 @@ export function sliceAuto(img: RawImage, cfg: AutoSlicing): Rect[] {
 
   const isOpaque = (x: number, y: number): boolean =>
     (img.data[(y * width + x) * 4 + 3] ?? 0) > alphaMin;
-
-  // Seed: every opaque pixel is its own component (size 1).
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (isOpaque(x, y)) parent[y * width + x] = -1;
-    }
-  }
 
   // Union 8-neighborhood opaque pixels.
   for (let y = 0; y < height; y++) {
@@ -89,34 +84,52 @@ export function sliceAuto(img: RawImage, cfg: AutoSlicing): Rect[] {
     }
   }
 
-  let rects = Array.from(boxes.values()).map((b) => ({
+  const rects = Array.from(boxes.values()).map((b) => ({
     x: b.minX,
     y: b.minY,
     w: b.maxX - b.minX + 1,
     h: b.maxY - b.minY + 1,
   }));
 
-  // Merge boxes within minGapPx until no more merges happen.
-  if (cfg.minGapPx > 0) {
+  // Merge boxes within minGapPx. The previous O(n^3) splice-and-restart
+  // implementation would stall the UI on noisy sheets (e.g. antialiased
+  // particles) that produce hundreds of components. Instead, union them
+  // with a classic union-find over rect indices so the merge is near-O(n)
+  // amortized. This also remains order-independent, so a later sort
+  // produces a deterministic result.
+  let merged = rects;
+  if (cfg.minGapPx > 0 && rects.length > 1) {
     const gap = cfg.minGapPx;
-    let changed = true;
-    while (changed) {
-      changed = false;
-      outer: for (let i = 0; i < rects.length; i++) {
-        for (let j = i + 1; j < rects.length; j++) {
-          if (rectsWithinGap(rects[i]!, rects[j]!, gap)) {
-            rects[i] = unionRect(rects[i]!, rects[j]!);
-            rects.splice(j, 1);
-            changed = true;
-            break outer;
-          }
-        }
+    const parent = new Int32Array(rects.length);
+    for (let i = 0; i < parent.length; i++) parent[i] = i;
+    const find = (a: number): number => {
+      while (parent[a] !== a) {
+        parent[a] = parent[parent[a]!]!;
+        a = parent[a]!;
+      }
+      return a;
+    };
+    const unite = (a: number, b: number) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent[ra] = rb;
+    };
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        if (rectsWithinGap(rects[i]!, rects[j]!, gap)) unite(i, j);
       }
     }
+    const groups = new Map<number, Rect>();
+    for (let i = 0; i < rects.length; i++) {
+      const root = find(i);
+      const existing = groups.get(root);
+      groups.set(root, existing ? unionRect(existing, rects[i]!) : rects[i]!);
+    }
+    merged = Array.from(groups.values());
   }
 
-  rects.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
-  return rects;
+  merged.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
+  return merged;
 }
 
 function rectsWithinGap(a: Rect, b: Rect, gap: number): boolean {

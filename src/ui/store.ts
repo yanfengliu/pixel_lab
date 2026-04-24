@@ -11,6 +11,7 @@ import type {
 import { newId } from '../core/ids';
 import { prepareSheet, prepareGif } from '../core/source';
 import { decodePng } from '../core/png';
+import { decodeGif } from '../core/gif';
 import type { RawImage } from '../core/image';
 import type { DecodedImport } from '../io/file';
 
@@ -42,6 +43,8 @@ export interface StoreState {
   setAnimationLoop: (id: Id, loop: boolean) => void;
   selectAnimation: (id: Id | null) => void;
 
+  renameProject: (name: string) => void;
+
   appendFrames: (animationId: Id, refs: FrameRef[]) => void;
   removeFrameAt: (animationId: Id, index: number) => void;
   reorderFrame: (animationId: Id, from: number, to: number) => void;
@@ -49,6 +52,22 @@ export interface StoreState {
 
 function emptyProject(name: string): Project {
   return { version: 1, name, sources: [], animations: [] };
+}
+
+/**
+ * Keep animation names unique across a project. Manifest.json keys
+ * animations by name and a duplicate would silently overwrite on export,
+ * so we enforce uniqueness at the input boundary. If `name` clashes, we
+ * append ` (2)`, ` (3)`, ... until unique.
+ */
+function ensureUniqueName(name: string, taken: ReadonlyArray<string>): string {
+  const set = new Set(taken);
+  if (!set.has(name)) return name;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${name} (${i})`;
+    if (!set.has(candidate)) return candidate;
+  }
+  throw new Error('ensureUniqueName: ran out of disambiguating suffixes');
 }
 
 export const useStore = create<StoreState>((set) => ({
@@ -75,9 +94,16 @@ export const useStore = create<StoreState>((set) => ({
         const bitmap = decodePng(s.imageBytes);
         sheetBitmaps[s.id] = bitmap;
         prepared[s.id] = prepareSheet(s, bitmap);
+      } else {
+        // GIF sources keep their original bytes in imageBytes, so a saved
+        // project is self-contained: re-decode via decodeGif and feed the
+        // frames to prepareGif so export/preview work on reload.
+        const decoded = decodeGif(s.imageBytes);
+        prepared[s.id] = prepareGif(
+          s,
+          decoded.map((f) => f.image),
+        );
       }
-      // GIF sources require the user to re-import the bytes via the UI's
-      // file picker. A reopened project shows placeholder frames until then.
     }
     set({
       project,
@@ -144,10 +170,12 @@ export const useStore = create<StoreState>((set) => ({
         ...a,
         frames: a.frames.filter((f) => f.sourceId !== id),
       }));
-      const { [id]: _prepOmit, ...restPrepared } = s.prepared;
-      const { [id]: _bmpOmit, ...restBitmaps } = s.sheetBitmaps;
-      void _prepOmit;
-      void _bmpOmit;
+      const restPrepared = Object.fromEntries(
+        Object.entries(s.prepared).filter(([k]) => k !== id),
+      );
+      const restBitmaps = Object.fromEntries(
+        Object.entries(s.sheetBitmaps).filter(([k]) => k !== id),
+      );
       return {
         project: { ...s.project, sources, animations },
         prepared: restPrepared,
@@ -177,9 +205,14 @@ export const useStore = create<StoreState>((set) => ({
   selectSource: (id) => set({ selectedSourceId: id }),
 
   addAnimation: (name) => {
+    const state = useStore.getState();
+    const unique = ensureUniqueName(
+      name,
+      state.project.animations.map((a) => a.name),
+    );
     const anim: Animation = {
       id: newId(),
-      name,
+      name: unique,
       fps: 12,
       loop: true,
       frames: [],
@@ -202,14 +235,23 @@ export const useStore = create<StoreState>((set) => ({
     })),
 
   renameAnimation: (id, name) =>
-    set((s) => ({
-      project: {
-        ...s.project,
-        animations: s.project.animations.map((a) =>
-          a.id === id ? { ...a, name } : a,
-        ),
-      },
-    })),
+    set((s) => {
+      const taken = s.project.animations
+        .filter((a) => a.id !== id)
+        .map((a) => a.name);
+      const unique = ensureUniqueName(name, taken);
+      return {
+        project: {
+          ...s.project,
+          animations: s.project.animations.map((a) =>
+            a.id === id ? { ...a, name: unique } : a,
+          ),
+        },
+      };
+    }),
+
+  renameProject: (name) =>
+    set((s) => ({ project: { ...s.project, name } })),
 
   setAnimationFps: (id, fps) =>
     set((s) => ({

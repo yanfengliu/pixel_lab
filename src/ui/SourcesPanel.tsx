@@ -1,4 +1,4 @@
-import { useStore } from '../app/store';
+import { useStore } from './store';
 import { openBytes } from '../io/persist';
 import { decodeImport } from '../io/file';
 
