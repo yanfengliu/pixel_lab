@@ -101,13 +101,21 @@ export function ToolPalette() {
     function onKey(ev: KeyboardEvent) {
       if (isEditableTarget(ev.target)) return;
       const k = ev.key.toLowerCase();
-      // Undo / redo first (with modifiers).
+      // Undo / redo first (with modifiers). Ctrl+Z undoes, Ctrl+Shift+Z
+      // and Ctrl+Y (Windows convention) both redo.
       if ((ev.ctrlKey || ev.metaKey) && k === 'z') {
         ev.preventDefault();
         const sid = useStore.getState().selectedSourceId;
         if (!sid) return;
         if (ev.shiftKey) redo(sid);
         else undo(sid);
+        return;
+      }
+      if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && k === 'y') {
+        ev.preventDefault();
+        const sid = useStore.getState().selectedSourceId;
+        if (!sid) return;
+        redo(sid);
         return;
       }
       // Bare-key shortcuts.

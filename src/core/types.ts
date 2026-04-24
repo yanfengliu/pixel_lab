@@ -1,3 +1,5 @@
+import type { RawImage } from './image';
+
 export type Id = string;
 
 export interface Rect {
@@ -62,7 +64,7 @@ export interface Source {
    * length 1; sequences match the imported frame count. Edits land here so
    * the original `imageBytes` stays intact for provenance.
    */
-  editedFrames?: import('./image').RawImage[];
+  editedFrames?: RawImage[];
   /**
    * Provenance marker. `'png'` and `'gif'` are imports; `'blank'` is a
    * source created from scratch via the New Blank dialog.
@@ -119,5 +121,5 @@ export type Tool =
 export interface PreparedSource {
   sourceId: Id;
   /** RawImage matches the structural subset of DOM ImageData we use. */
-  frames: import('./image').RawImage[];
+  frames: RawImage[];
 }

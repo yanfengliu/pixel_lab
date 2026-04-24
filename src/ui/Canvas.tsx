@@ -56,7 +56,6 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
   const opacity = useStore((s) => s.opacity);
   const brushSize = useStore((s) => s.brushSize);
   const selectedFrameIndex = useStore((s) => s.selectedFrameIndex);
-  const setSelectedFrameIndex = useStore((s) => s.setSelectedFrameIndex);
   const setPrimaryColor = useStore((s) => s.setPrimaryColor);
   const setSecondaryColor = useStore((s) => s.setSecondaryColor);
   const beginStroke = useStore((s) => s.beginStroke);
@@ -145,11 +144,7 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
           zoom={zoom}
         />
       ) : null}
-      <RectsOverlay rects={rects} zoom={zoom} onClickRect={
-        source.kind === 'sheet' && activeTool !== 'slice'
-          ? (i) => setSelectedFrameIndex(source.id, i)
-          : undefined
-      } />
+      <RectsOverlay rects={rects} zoom={zoom} />
       <PaintOverlay
         source={source}
         bitmap={paintTarget}
@@ -258,15 +253,12 @@ function OnionSkinLayer({
   );
 }
 
-function RectsOverlay({
-  rects,
-  zoom,
-  onClickRect,
-}: {
-  rects: Rect[];
-  zoom: number;
-  onClickRect?: (index: number) => void;
-}) {
+function RectsOverlay({ rects, zoom }: { rects: Rect[]; zoom: number }) {
+  // RectsOverlay is display-only: the PaintOverlay above it captures
+  // clicks for paint/slice tools, and FramesStrip owns the "pick a
+  // frame" UX. An earlier version wired a click-to-select handler
+  // here but it was unreachable — PaintOverlay's `pointer-events: auto`
+  // absorbed every click before it bubbled.
   return (
     <div className="overlay">
       {rects.map((r, i) => (
@@ -278,10 +270,8 @@ function RectsOverlay({
             top: r.y * zoom,
             width: r.w * zoom,
             height: r.h * zoom,
-            pointerEvents: onClickRect ? 'auto' : 'none',
-            cursor: onClickRect ? 'pointer' : 'default',
+            pointerEvents: 'none',
           }}
-          onClick={() => onClickRect?.(i)}
         />
       ))}
     </div>
@@ -386,11 +376,14 @@ function PaintOverlay({
   const previewDataRef = useRef<ImageData | null>(null);
   const lastShapeBboxRef = useRef<Rect | null>(null);
 
-  // Re-render preview whenever selection changes even if no drag is active.
+  // Re-render preview whenever selection, tool state, or brush params
+  // change even if no drag is active. Without primary/brushSize/opacity
+  // in deps, mid-drag color or size tweaks wouldn't refresh the shape
+  // preview until the next mousemove.
   useEffect(() => {
     drawPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, bitmap.width, bitmap.height, zoom]);
+  }, [selection, bitmap.width, bitmap.height, zoom, primary, brushSize, opacity]);
 
   function eventToPixel(clientX: number, clientY: number) {
     const rect = rootRef.current?.getBoundingClientRect();
@@ -569,7 +562,17 @@ function PaintOverlay({
     }
   }
 
+  // Track Shift state across the drag so the preview can reflect it live.
+  const shiftRef = useRef(false);
+  function isShiftHeld(): boolean {
+    return shiftRef.current;
+  }
+
   function handleDown(ev: React.MouseEvent) {
+    // Capture the Shift modifier at drag start so the initial preview
+    // reflects Shift-held-before-click (otherwise the filled variant of
+    // rect/ellipse tools would only show up on the first mousemove).
+    shiftRef.current = ev.shiftKey;
     const p = eventToPixel(ev.clientX, ev.clientY);
     if (!p) return;
 
@@ -689,12 +692,6 @@ function PaintOverlay({
         drawPreview();
         return;
     }
-  }
-
-  // Track Shift state across the drag so the preview can reflect it live.
-  const shiftRef = useRef(false);
-  function isShiftHeld(): boolean {
-    return shiftRef.current;
   }
 
   useEffect(() => {

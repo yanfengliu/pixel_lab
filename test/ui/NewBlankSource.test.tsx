@@ -55,4 +55,18 @@ describe('NewBlankSource', () => {
     expect(useStore.getState().project.sources).toHaveLength(0);
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('ESC closes the dialog (N4)', () => {
+    const onClose = vi.fn();
+    render(<NewBlankSource open={true} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('ESC does nothing when the dialog is closed', () => {
+    const onClose = vi.fn();
+    render(<NewBlankSource open={false} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

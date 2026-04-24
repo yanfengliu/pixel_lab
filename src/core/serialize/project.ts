@@ -5,7 +5,6 @@ import type {
   GifFrameMeta,
   Slicing,
 } from '../types';
-import type { RawImage } from '../image';
 import { bytesToBase64, base64ToBytes } from './base64';
 import { encodePng, decodePng } from '../png';
 
@@ -193,7 +192,7 @@ function validateProjectJson(v: Partial<ProjectJsonAny>): void {
 export type { ProjectJsonV2, SourceJsonV2 };
 
 // Internal helper exposed for tests that want to construct synthetic v1
-// project JSON.
+// project JSON. Only used from test code.
 export function _v1JsonForTests(args: {
   name: string;
   sources: Array<{
@@ -228,6 +227,3 @@ export function _v1JsonForTests(args: {
   };
   return JSON.stringify(v1, null, 2);
 }
-
-// satisfy unused-import linting if RawImage isn't used directly
-export type { RawImage };

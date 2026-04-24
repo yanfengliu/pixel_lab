@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './store';
 
 interface Props {
@@ -19,6 +19,19 @@ export function NewBlankSource({ open, onClose }: Props) {
   const [height, setHeight] = useState(64);
   const [frameCount, setFrameCount] = useState(8);
   const [name, setName] = useState('');
+
+  // ESC closes the dialog while it's open. Listener is attached to the
+  // window so the key fires no matter where focus lives (input fields
+  // included). ToolPalette's ESC handler also runs but only clears the
+  // marquee selection — harmless here.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 

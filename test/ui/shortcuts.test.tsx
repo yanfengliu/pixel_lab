@@ -6,7 +6,8 @@ import { useStore, resetStore } from '../../src/ui/store';
 /**
  * End-to-end keyboard shortcut coverage for every binding in the spec:
  *
- *   B, E, I, G, L, U, M, V, S, X, [, ], Ctrl+Z, Ctrl+Shift+Z, ESC
+ *   B, E, I, G, L, U, M, V, S, X, [, ], Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y,
+ *   ESC
  *
  * The ToolPalette owns the keyboard listener (window-level). These
  * tests mount the palette and assert the store side-effect of each
@@ -142,6 +143,23 @@ describe('Keyboard shortcuts — complete spec map', () => {
     expect(useStore.getState().redoStacks[src.id]).toHaveLength(1);
     render(<ToolPalette />);
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true, shiftKey: true });
+    expect(useStore.getState().redoStacks[src.id] ?? []).toHaveLength(0);
+    expect(useStore.getState().undoStacks[src.id]).toHaveLength(1);
+  });
+
+  it('Ctrl+Y also redoes (Windows convention, N5)', () => {
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    const commit = useStore.getState().beginStroke(src.id, 0);
+    const bmp = useStore.getState().sheetBitmaps[src.id]!;
+    bmp.data[0] = 200;
+    bmp.data[3] = 255;
+    commit();
+    useStore.getState().undo(src.id);
+    expect(useStore.getState().redoStacks[src.id]).toHaveLength(1);
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 'y', ctrlKey: true });
     expect(useStore.getState().redoStacks[src.id] ?? []).toHaveLength(0);
     expect(useStore.getState().undoStacks[src.id]).toHaveLength(1);
   });
