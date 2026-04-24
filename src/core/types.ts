@@ -28,13 +28,18 @@ export interface ManualSlicing {
   rects: Array<Rect & { label?: string }>;
 }
 
-export interface GifSlicing {
-  kind: 'gif';
+/**
+ * Sequence sources (formerly "gif") have one bitmap per frame and no
+ * sub-slicing. The slicing kind is fixed at construction time and never
+ * dispatched through the slicer; `prepareSequence` produces frames directly.
+ */
+export interface SequenceSlicing {
+  kind: 'sequence';
 }
 
-export type Slicing = GridSlicing | AutoSlicing | ManualSlicing | GifSlicing;
+export type Slicing = GridSlicing | AutoSlicing | ManualSlicing | SequenceSlicing;
 
-export type SourceKind = 'sheet' | 'gif';
+export type SourceKind = 'sheet' | 'sequence';
 
 export interface GifFrameMeta {
   index: number;
@@ -52,6 +57,17 @@ export interface Source {
   imageBytes: Uint8Array;
   /** GIF-only: per-frame delay metadata parsed from the source. */
   gifFrames?: GifFrameMeta[];
+  /**
+   * When present, authoritative pixel data for this source. Sheets have
+   * length 1; sequences match the imported frame count. Edits land here so
+   * the original `imageBytes` stays intact for provenance.
+   */
+  editedFrames?: import('./image').RawImage[];
+  /**
+   * Provenance marker. `'png'` and `'gif'` are imports; `'blank'` is a
+   * source created from scratch via the New Blank dialog.
+   */
+  importedFrom?: 'png' | 'gif' | 'blank';
 }
 
 export interface FrameRef {
@@ -71,11 +87,16 @@ export interface Animation {
 }
 
 export interface Project {
-  version: 1;
+  version: 2;
   name: string;
   sources: Source[];
   animations: Animation[];
+  /** User-curated swatches as hex strings ("#rrggbb" or "#rrggbbaa"). */
+  swatches?: string[];
 }
+
+/** Phase 1 paint tools. Shape/selection tools land in Phase 2. */
+export type Tool = 'pencil' | 'eraser' | 'eyedropper' | 'bucket';
 
 /** Runtime-only derived data; never serialized. */
 export interface PreparedSource {

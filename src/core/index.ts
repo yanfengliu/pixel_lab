@@ -5,7 +5,7 @@ export type {
   GridSlicing,
   AutoSlicing,
   ManualSlicing,
-  GifSlicing,
+  SequenceSlicing,
   Source,
   SourceKind,
   GifFrameMeta,
@@ -13,9 +13,10 @@ export type {
   Animation,
   Project,
   PreparedSource,
+  Tool,
 } from './types';
 
-export type { RawImage } from './image';
+export type { RawImage, RGBA } from './image';
 export {
   createImage,
   setPixel,
@@ -30,7 +31,7 @@ export { newId } from './ids';
 
 export { slice, sliceGrid, sliceAuto, sliceManual } from './slicers';
 
-export { prepareSheet, prepareGif } from './source';
+export { prepareSheet, prepareSequence } from './source';
 
 export type { DecodedGifFrame, GifFramePatch } from './gif';
 export { compositeGifFrames, decodeGif } from './gif';

@@ -142,7 +142,7 @@ function buildFrameRefs(
   prepared: ReturnType<typeof useStore.getState>['prepared'],
   sheetBitmaps: ReturnType<typeof useStore.getState>['sheetBitmaps'],
 ): FrameRef[] {
-  if (source.kind === 'gif') {
+  if (source.kind === 'sequence') {
     const framesN = prepared[source.id]?.frames.length ?? 0;
     const delays = source.gifFrames?.map((f) => f.delayMs) ?? [];
     return Array.from({ length: framesN }, (_, i) => {
@@ -155,7 +155,7 @@ function buildFrameRefs(
   const bitmap = sheetBitmaps[source.id];
   if (!bitmap) return [];
   const rects =
-    source.slicing.kind === 'gif'
+    source.slicing.kind === 'sequence'
       ? []
       : slice(bitmap, source.slicing);
   return rects.map((_, i) => ({ sourceId: source.id, rectIndex: i }));

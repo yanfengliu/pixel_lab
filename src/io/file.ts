@@ -3,17 +3,27 @@ import { decodeGif } from '../core/gif';
 import type { RawImage } from '../core/image';
 import type { SourceKind } from '../core/types';
 
+/**
+ * On-disk format of an imported file. This is provenance only — the
+ * resulting `Source.kind` (`'sheet'` for PNG, `'sequence'` for GIF) is
+ * carried in `DecodedImport.kind`.
+ */
+export type ImportFormat = 'png' | 'gif';
+
 export interface DecodedImport {
+  /** Resulting `Source.kind` (`'sheet'` for PNG, `'sequence'` for GIF). */
   kind: SourceKind;
-  /** All decoded frames. Sheets produce exactly one. GIFs produce N. */
+  /** Original on-disk format, recorded as `Source.importedFrom`. */
+  format: ImportFormat;
+  /** All decoded frames. PNGs produce exactly one. GIFs produce N. */
   frames: RawImage[];
-  /** Per-frame delays for GIFs, empty for sheets. */
+  /** Per-frame delays for GIFs, empty for PNG sheets. */
   delaysMs: number[];
   /** Original bytes, preserved for the source's imageBytes field. */
   bytes: Uint8Array;
 }
 
-export function detectKind(bytes: Uint8Array): SourceKind {
+export function detectFormat(bytes: Uint8Array): ImportFormat {
   // GIF87a or GIF89a — full 6-byte magic. "GIF8" alone is not specific
   // enough and would let "GIF80" etc. reach parseGIF, throwing a vague
   // error at the user.
@@ -33,16 +43,17 @@ export function detectKind(bytes: Uint8Array): SourceKind {
     bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a &&
     bytes[6] === 0x1a && bytes[7] === 0x0a
   ) {
-    return 'sheet';
+    return 'png';
   }
-  throw new Error('detectKind: unrecognized image format (only PNG and GIF are supported)');
+  throw new Error('detectFormat: unrecognized image format (only PNG and GIF are supported)');
 }
 
 export function decodeImport(bytes: Uint8Array): DecodedImport {
-  const kind = detectKind(bytes);
-  if (kind === 'sheet') {
+  const format = detectFormat(bytes);
+  if (format === 'png') {
     return {
-      kind,
+      kind: 'sheet',
+      format,
       frames: [decodePng(bytes)],
       delaysMs: [],
       bytes,
@@ -50,7 +61,8 @@ export function decodeImport(bytes: Uint8Array): DecodedImport {
   }
   const decoded = decodeGif(bytes);
   return {
-    kind,
+    kind: 'sequence',
+    format,
     frames: decoded.map((f) => f.image),
     delaysMs: decoded.map((f) => f.delayMs),
     bytes,

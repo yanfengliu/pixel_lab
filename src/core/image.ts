@@ -10,6 +10,18 @@ export interface RawImage {
   data: Uint8ClampedArray;
 }
 
+/**
+ * Premultiplied-style RGBA color. Components are 0..255 integers; alpha
+ * 0 means fully transparent, 255 fully opaque. Used by drawing tools and
+ * the color panel.
+ */
+export interface RGBA {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
 export function createImage(width: number, height: number): RawImage {
   return { width, height, data: new Uint8ClampedArray(width * height * 4) };
 }

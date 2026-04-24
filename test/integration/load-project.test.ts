@@ -20,7 +20,7 @@ describe('loadProject end-to-end', () => {
       }
     }
     const project: Project = {
-      version: 1,
+      version: 2,
       name: 'hero',
       sources: [
         {
@@ -77,17 +77,17 @@ describe('loadProject end-to-end', () => {
 
   it('rejects malformed sources with a descriptive error', () => {
     const missingBytes = JSON.stringify({
-      version: 1,
+      version: 2,
       name: 'x',
-      sources: [{ id: 'a', kind: 'sheet', width: 1, height: 1, slicing: { kind: 'gif' } }],
+      sources: [{ id: 'a', kind: 'sheet', width: 1, height: 1, slicing: { kind: 'sequence' } }],
       animations: [],
     });
     expect(() => projectFromJson(missingBytes)).toThrow(/missing imageBase64/);
 
     const invalidKind = JSON.stringify({
-      version: 1,
+      version: 2,
       name: 'x',
-      sources: [{ id: 'a', kind: 'bogus', imageBase64: '', slicing: { kind: 'gif' } }],
+      sources: [{ id: 'a', kind: 'bogus', imageBase64: '', slicing: { kind: 'sequence' } }],
       animations: [],
     });
     expect(() => projectFromJson(invalidKind)).toThrow(/invalid kind/);

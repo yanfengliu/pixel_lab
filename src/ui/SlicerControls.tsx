@@ -12,7 +12,7 @@ export function SlicerControls({ source, zoom, onZoomChange, onSlicingChange }: 
 
   function changeKind(next: Slicing['kind']) {
     if (next === kind) return;
-    if (source.kind === 'gif') return; // GIF kind is fixed
+    if (source.kind === 'sequence') return; // sequence slicing is fixed
     switch (next) {
       case 'grid':
         onSlicingChange({
@@ -38,8 +38,11 @@ export function SlicerControls({ source, zoom, onZoomChange, onSlicingChange }: 
 
   return (
     <div className="slicer-controls">
-      {source.kind === 'gif' ? (
-        <span>GIF source — {source.gifFrames?.length ?? 0} frames</span>
+      {source.kind === 'sequence' ? (
+        <span>
+          {source.importedFrom === 'gif' ? 'GIF' : 'Sequence'} source —{' '}
+          {source.gifFrames?.length ?? source.editedFrames?.length ?? 0} frames
+        </span>
       ) : (
         <>
           <label>

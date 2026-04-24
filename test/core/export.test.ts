@@ -22,7 +22,7 @@ describe('buildExport', () => {
     { sourceId: 'src', frames: framesForSheet(3) },
   ];
   const project: Project = {
-    version: 1,
+    version: 2,
     name: 'hero',
     sources: [
       {

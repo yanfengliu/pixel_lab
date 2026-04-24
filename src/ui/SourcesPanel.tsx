@@ -47,8 +47,8 @@ export function SourcesPanel() {
           >
             <span className="name" title={s.name}>{s.name}</span>
             <span className="meta">
-              {s.kind === 'gif'
-                ? `${s.gifFrames?.length ?? 0}f`
+              {s.kind === 'sequence'
+                ? `${s.gifFrames?.length ?? s.editedFrames?.length ?? 0}f`
                 : `${s.width}x${s.height}`}
             </span>
             <button

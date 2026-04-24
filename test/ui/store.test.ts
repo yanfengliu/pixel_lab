@@ -6,7 +6,13 @@ import { createImage, setPixel } from '../../src/core/image';
 function mockSheetImport(): DecodedImport {
   const img = createImage(16, 16);
   setPixel(img, 0, 0, 255, 0, 0, 255);
-  return { kind: 'sheet', frames: [img], delaysMs: [], bytes: new Uint8Array() };
+  return {
+    kind: 'sheet',
+    format: 'png',
+    frames: [img],
+    delaysMs: [],
+    bytes: new Uint8Array(),
+  };
 }
 
 function mockGifImport(): DecodedImport {
@@ -15,7 +21,8 @@ function mockGifImport(): DecodedImport {
   setPixel(a, 0, 0, 1, 0, 0, 255);
   setPixel(b, 0, 0, 0, 1, 0, 255);
   return {
-    kind: 'gif',
+    kind: 'sequence',
+    format: 'gif',
     frames: [a, b],
     delaysMs: [100, 80],
     bytes: new Uint8Array(),
@@ -34,15 +41,22 @@ describe('store', () => {
     expect(state.prepared[source.id]?.frames).toHaveLength(1);
   });
 
-  it('addSource for a gif stores per-frame delays and prepared frames', () => {
+  it('addSource for a sequence stores per-frame delays and prepared frames', () => {
     const src = useStore.getState().addSource('walk.gif', mockGifImport());
     const state = useStore.getState();
-    expect(src.slicing.kind).toBe('gif');
+    expect(src.kind).toBe('sequence');
+    expect(src.slicing.kind).toBe('sequence');
+    expect(src.importedFrom).toBe('gif');
     expect(src.gifFrames).toEqual([
       { index: 0, delayMs: 100 },
       { index: 1, delayMs: 80 },
     ]);
     expect(state.prepared[src.id]?.frames).toHaveLength(2);
+  });
+
+  it('addSource for a PNG sets importedFrom: "png"', () => {
+    const src = useStore.getState().addSource('walk.png', mockSheetImport());
+    expect(src.importedFrom).toBe('png');
   });
 
   it('updateSlicing for a sheet regenerates prepared frames', () => {

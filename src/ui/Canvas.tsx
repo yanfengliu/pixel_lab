@@ -21,7 +21,7 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
 
   const rects = useMemo<Rect[]>(() => {
     try {
-      if (source.slicing.kind === 'gif') return [];
+      if (source.slicing.kind === 'sequence') return [];
       return slice(bitmap, source.slicing);
     } catch (err) {
       // Don't throw into the render — the user probably typed an invalid

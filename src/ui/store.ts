@@ -9,7 +9,7 @@ import type {
   Source,
 } from '../core/types';
 import { newId } from '../core/ids';
-import { prepareSheet, prepareGif } from '../core/source';
+import { prepareSheet, prepareSequence } from '../core/source';
 import { decodePng } from '../core/png';
 import { decodeGif } from '../core/gif';
 import type { RawImage } from '../core/image';
@@ -51,7 +51,7 @@ export interface StoreState {
 }
 
 function emptyProject(name: string): Project {
-  return { version: 1, name, sources: [], animations: [] };
+  return { version: 2, name, sources: [], animations: [] };
 }
 
 /**
@@ -91,18 +91,23 @@ export const useStore = create<StoreState>((set) => ({
     const sheetBitmaps: Record<Id, RawImage> = {};
     for (const s of project.sources) {
       if (s.kind === 'sheet') {
-        const bitmap = decodePng(s.imageBytes);
+        // Prefer authoritative editedFrames when present; otherwise decode
+        // the imported PNG bytes once and cache so further updateSlicing
+        // calls don't redecode.
+        const bitmap = s.editedFrames?.[0] ?? decodePng(s.imageBytes);
         sheetBitmaps[s.id] = bitmap;
         prepared[s.id] = prepareSheet(s, bitmap);
       } else {
-        // GIF sources keep their original bytes in imageBytes, so a saved
-        // project is self-contained: re-decode via decodeGif and feed the
-        // frames to prepareGif so export/preview work on reload.
-        const decoded = decodeGif(s.imageBytes);
-        prepared[s.id] = prepareGif(
-          s,
-          decoded.map((f) => f.image),
-        );
+        // Sequence sources keep their original bytes in imageBytes when
+        // imported from a GIF, so a saved project is self-contained:
+        // re-decode via decodeGif and feed the frames to prepareSequence.
+        // Blank sequences carry editedFrames-only and an empty
+        // imageBytes; prepareSequence will use editedFrames in that case.
+        const decoded =
+          s.editedFrames && s.editedFrames.length > 0
+            ? []
+            : decodeGif(s.imageBytes).map((f) => f.image);
+        prepared[s.id] = prepareSequence(s, decoded);
       }
     }
     set({
@@ -125,6 +130,7 @@ export const useStore = create<StoreState>((set) => ({
       width: firstFrame.width,
       height: firstFrame.height,
       imageBytes: imported.bytes,
+      importedFrom: imported.format,
       slicing:
         imported.kind === 'sheet'
           ? {
@@ -136,8 +142,8 @@ export const useStore = create<StoreState>((set) => ({
               rows: 1,
               cols: 1,
             }
-          : { kind: 'gif' },
-      ...(imported.kind === 'gif'
+          : { kind: 'sequence' },
+      ...(imported.kind === 'sequence'
         ? {
             gifFrames: imported.frames.map((_, i) => ({
               index: i,
@@ -149,7 +155,7 @@ export const useStore = create<StoreState>((set) => ({
     const prepared: PreparedSource =
       imported.kind === 'sheet'
         ? prepareSheet(source, firstFrame)
-        : prepareGif(source, imported.frames);
+        : prepareSequence(source, imported.frames);
 
     set((s) => ({
       project: { ...s.project, sources: [...s.project.sources, source] },
@@ -198,7 +204,7 @@ export const useStore = create<StoreState>((set) => ({
         }
         prepared[id] = prepareSheet(source, bitmap);
       }
-      // GIF slicing is fixed to {kind:'gif'} — no rebuild needed.
+      // Sequence slicing is fixed to {kind:'sequence'} — no rebuild needed.
       return { project: { ...s.project, sources }, prepared };
     }),
 

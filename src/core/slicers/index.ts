@@ -5,8 +5,8 @@ import { sliceAuto } from './auto';
 import { sliceManual } from './manual';
 
 /**
- * Dispatcher. GIF sources declare `{kind:'gif'}` and do not use this;
- * their rects are derived from the decoded GIF frame list in `source.ts`.
+ * Dispatcher. Sequence sources declare `{kind:'sequence'}` and do not use
+ * this dispatcher; their frames come straight from `prepareSequence`.
  */
 export function slice(img: RawImage, cfg: Slicing): Rect[] {
   switch (cfg.kind) {
@@ -16,9 +16,9 @@ export function slice(img: RawImage, cfg: Slicing): Rect[] {
       return sliceAuto(img, cfg);
     case 'manual':
       return sliceManual(cfg);
-    case 'gif':
+    case 'sequence':
       throw new Error(
-        "slice: GIF sources derive rects via prepareGif, not the slicer dispatch",
+        'slice: sequence sources derive frames via prepareSequence, not the slicer dispatch',
       );
   }
 }

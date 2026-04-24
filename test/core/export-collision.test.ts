@@ -26,7 +26,7 @@ describe('buildExport frame-key uniqueness under sanitize collapse', () => {
       { sourceId: 'src', frames: [frame(50), frame(150)] },
     ];
     const project: Project = {
-      version: 1,
+      version: 2,
       name: 'p',
       sources: [
         {
