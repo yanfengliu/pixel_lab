@@ -97,6 +97,26 @@ describe('project serialize', () => {
     expect(project.sources[0]!.gifFrames).toHaveLength(2);
   });
 
+  it('migrates v1 sheet source with importedFrom: "png" (I10)', () => {
+    const v1Json = _v1JsonForTests({
+      name: 'plain',
+      sources: [
+        {
+          id: 's1',
+          name: 'walk.png',
+          kind: 'sheet',
+          width: 4,
+          height: 4,
+          imageBytes: new Uint8Array([1, 2, 3, 4]),
+          slicing: { kind: 'grid', cellW: 4, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1 },
+        },
+      ],
+      animations: [],
+    });
+    const project = projectFromJson(v1Json);
+    expect(project.sources[0]!.importedFrom).toBe('png');
+  });
+
   it('v1 sheet without editedFrames round-trips identically on re-save', () => {
     const v1Json = _v1JsonForTests({
       name: 'plain',

@@ -106,6 +106,26 @@ describe('drawRectOutline', () => {
     drawRectOutline(img, 2, 2, 2, 2, BRUSH);
     expect(opaquePixels(img)).toEqual(new Set(['2,2']));
   });
+
+  it('at opacity 0.5, corner alpha equals edge alpha (I1 regression)', () => {
+    // Before the fix, drawRectOutline ran four drawLine calls that all
+    // included the corner rows / columns — at opacity < 1 the corners
+    // got composited twice, saturating faster than the edges.
+    const img = createImage(8, 8);
+    const brush: Brush = {
+      size: 1,
+      color: { r: 200, g: 0, b: 0, a: 255 },
+      opacity: 0.5,
+    };
+    drawRectOutline(img, 1, 1, 5, 5, brush);
+    // Four corners should have the same alpha as a non-corner edge pixel.
+    const edgeAlpha = getAlpha(img, 3, 1); // top edge, not a corner
+    expect(edgeAlpha).toBeGreaterThan(0);
+    expect(getAlpha(img, 1, 1)).toBe(edgeAlpha);
+    expect(getAlpha(img, 5, 1)).toBe(edgeAlpha);
+    expect(getAlpha(img, 1, 5)).toBe(edgeAlpha);
+    expect(getAlpha(img, 5, 5)).toBe(edgeAlpha);
+  });
 });
 
 describe('drawRectFilled', () => {
@@ -156,6 +176,21 @@ describe('drawEllipseOutline', () => {
     for (let y = 0; y < 12; y++) {
       for (let x = 0; x < 12; x++) {
         if (x < 2 || x > 8 || y < 2 || y > 8) {
+          expect(getAlpha(img, x, y)).toBe(0);
+        }
+      }
+    }
+  });
+
+  it('flat ellipse: outline stays inside bbox (N10 regression)', () => {
+    // Very flat (1-px tall) ellipse inscribed in a wide bbox. Before
+    // the fix, the end-cap cleanup loop could emit points at xL-1 /
+    // xR+1 outside the [xMin..xMax] range.
+    const img = createImage(16, 8);
+    drawEllipseOutline(img, 2, 3, 12, 3, BRUSH);
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 16; x++) {
+        if (x < 2 || x > 12 || y !== 3) {
           expect(getAlpha(img, x, y)).toBe(0);
         }
       }

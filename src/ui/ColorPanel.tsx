@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import { useStore } from './store';
 import type { RGBA } from '../core/image';
 
@@ -24,6 +24,27 @@ export function ColorPanel() {
   const [primaryHex, setPrimaryHex] = useState(rgbaToHex(primary));
   const [secondaryHex, setSecondaryHex] = useState(rgbaToHex(secondary));
   const [dragFromIdx, setDragFromIdx] = useState<number | null>(null);
+
+  // Keep the hex inputs in sync with external color changes (eyedropper
+  // sample, X-key swap, swatch click from outside the panel, etc.).
+  // Only re-sync when the color actually differs from what the input's
+  // current hex parses to, so typing mid-edit isn't clobbered.
+  useEffect(() => {
+    const current = parseHex(primaryHex);
+    if (!current || !colorsEqual(current, primary)) {
+      setPrimaryHex(rgbaToHex(primary));
+    }
+    // primaryHex intentionally omitted — the effect should only re-sync
+    // when the store-side color changes, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primary]);
+  useEffect(() => {
+    const current = parseHex(secondaryHex);
+    if (!current || !colorsEqual(current, secondary)) {
+      setSecondaryHex(rgbaToHex(secondary));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secondary]);
 
   function commitHex(value: string, target: 'primary' | 'secondary') {
     const parsed = parseHex(value);
@@ -148,6 +169,10 @@ export function ColorPanel() {
       </div>
     </div>
   );
+}
+
+function colorsEqual(a: RGBA, b: RGBA): boolean {
+  return a.r === b.r && a.g === b.g && a.b === b.b && a.a === b.a;
 }
 
 function parseHex(input: string): RGBA | null {

@@ -182,6 +182,32 @@ describe('Canvas — rect tool (with Shift fills)', () => {
     cleanup();
   });
 
+  it('rectOutline across many mousemoves commits only the final rect (I4)', () => {
+    // Regression: the preview path preallocates a RawImage + ImageData
+    // and only clears the previous bbox between mousemoves instead of
+    // allocating per-frame. This test walks through many preview
+    // updates and asserts the final state is exactly one rect outline —
+    // a ghost-frame leak would show spurious pixels from intermediate
+    // bboxes.
+    useStore.getState().setActiveTool('rectOutline');
+    useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });
+    const { bmp, container } = mountForSheet({ w: 8, h: 8 });
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    // Walk many intermediate positions.
+    for (let i = 0; i < 20; i++) {
+      fireEvent.mouseMove(window, { clientX: 2.5 + i * 0.1, clientY: 2.5 + i * 0.1 });
+    }
+    fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5 });
+    // Perimeter painted; a pixel clearly outside the final rect stays
+    // fully transparent.
+    expect(bmp.data[(1 * bmp.width + 1) * 4 + 3]).toBe(255);
+    expect(bmp.data[(4 * bmp.width + 4) * 4 + 3]).toBe(255);
+    expect(bmp.data[(7 * bmp.width + 7) * 4 + 3]).toBe(0);
+    expect(bmp.data[(0 * bmp.width + 0) * 4 + 3]).toBe(0);
+  });
+
   it('rectOutline without shift paints only the perimeter', () => {
     useStore.getState().setActiveTool('rectOutline');
     useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });

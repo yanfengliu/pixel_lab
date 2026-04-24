@@ -158,6 +158,15 @@ function ensureUniqueName(name: string, taken: ReadonlyArray<string>): string {
   throw new Error('ensureUniqueName: ran out of disambiguating suffixes');
 }
 
+/**
+ * Per-source undo stack cap. Session-only so this is a memory-bound
+ * concern rather than UX. Each delta stores before+after pixels inside
+ * its bounding rect, so a few hundred strokes on a 256×256 canvas can
+ * already exceed a hundred MB. 200 gives plenty of headroom for normal
+ * editing sessions while keeping RAM in the tens of MB range.
+ */
+const UNDO_CAP = 200;
+
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return n < 0 ? 0 : n > 1 ? 1 : n;
@@ -609,13 +618,17 @@ export const useStore = create<StoreState>((set) => ({
         }
       }
       const undoStack = [...(cur.undoStacks[sourceId] ?? []), delta];
+      const cappedUndo =
+        undoStack.length > UNDO_CAP
+          ? undoStack.slice(undoStack.length - UNDO_CAP)
+          : undoStack;
       // Any new stroke after an undo invalidates the redo stack.
       const { [sourceId]: _drop, ...restRedo } = cur.redoStacks;
       void _drop;
       set({
         project: { ...cur.project, sources },
         prepared,
-        undoStacks: { ...cur.undoStacks, [sourceId]: undoStack },
+        undoStacks: { ...cur.undoStacks, [sourceId]: cappedUndo },
         redoStacks: restRedo,
         renderCounters: bumpCounter(cur.renderCounters, sourceId),
       });

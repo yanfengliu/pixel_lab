@@ -311,6 +311,24 @@ describe('store: undo/redo', () => {
     expect(post.editedFrames!).toHaveLength(1);
   });
 
+  it('caps the undo stack so long sessions do not leak memory (I5)', () => {
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    // Paint 210 strokes; the cap (200) should kick in and drop the
+    // oldest entries.
+    for (let i = 0; i < 210; i++) {
+      const commit = useStore.getState().beginStroke(src.id, 0);
+      const bmp = useStore.getState().sheetBitmaps[src.id]!;
+      // Each stroke writes a distinct pixel so computeDelta returns a
+      // non-null delta.
+      setPixel(bmp, i % 4, Math.floor(i / 4) % 4, i & 255, 0, 0, 255);
+      commit();
+    }
+    const stack = useStore.getState().undoStacks[src.id]!;
+    expect(stack.length).toBe(200);
+  });
+
   it('beginStroke + commit + undo on a sequence frame', () => {
     const src = useStore.getState().createBlankSource({
       kind: 'sequence',

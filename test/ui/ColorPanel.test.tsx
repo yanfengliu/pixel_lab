@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, fireEvent, cleanup } from '@testing-library/react';
+import { render, fireEvent, cleanup, act } from '@testing-library/react';
 import { ColorPanel } from '../../src/ui/ColorPanel';
 import { useStore, resetStore } from '../../src/ui/store';
 
@@ -67,5 +67,49 @@ describe('ColorPanel', () => {
     const slider = getByLabelText('Opacity') as HTMLInputElement;
     fireEvent.change(slider, { target: { value: '50' } });
     expect(useStore.getState().opacity).toBeCloseTo(0.5, 2);
+  });
+
+  it('primary hex input resyncs when primaryColor changes externally (I8)', () => {
+    useStore.getState().setPrimaryColor({ r: 0x10, g: 0x10, b: 0x10, a: 255 });
+    const { getByLabelText } = render(<ColorPanel />);
+    const input = getByLabelText('Primary hex') as HTMLInputElement;
+    expect(input.value).toBe('#101010');
+    // Simulate an external color change (eyedropper, swap-via-X, swatch
+    // click outside ColorPanel, etc.).
+    act(() => {
+      useStore.getState().setPrimaryColor({ r: 0xab, g: 0xcd, b: 0xef, a: 255 });
+    });
+    expect(input.value).toBe('#abcdef');
+  });
+
+  it('secondary hex input resyncs on external change (I8)', () => {
+    useStore.getState().setSecondaryColor({ r: 0x11, g: 0x22, b: 0x33, a: 255 });
+    const { getByLabelText } = render(<ColorPanel />);
+    const input = getByLabelText('Secondary hex') as HTMLInputElement;
+    expect(input.value).toBe('#112233');
+    act(() => {
+      useStore.getState().setSecondaryColor({
+        r: 0x44,
+        g: 0x55,
+        b: 0x66,
+        a: 255,
+      });
+    });
+    expect(input.value).toBe('#445566');
+  });
+
+  it('X-key swap flips both hex inputs (I8 via swapColors)', () => {
+    useStore.getState().setPrimaryColor({ r: 0x10, g: 0x20, b: 0x30, a: 255 });
+    useStore.getState().setSecondaryColor({ r: 0xf0, g: 0xe0, b: 0xd0, a: 255 });
+    const { getByLabelText } = render(<ColorPanel />);
+    const primary = getByLabelText('Primary hex') as HTMLInputElement;
+    const secondary = getByLabelText('Secondary hex') as HTMLInputElement;
+    expect(primary.value).toBe('#102030');
+    expect(secondary.value).toBe('#f0e0d0');
+    act(() => {
+      useStore.getState().swapColors();
+    });
+    expect(primary.value).toBe('#f0e0d0');
+    expect(secondary.value).toBe('#102030');
   });
 });

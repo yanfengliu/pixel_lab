@@ -40,6 +40,11 @@ export function drawLine(
  * Axis-aligned rectangle outline at brush thickness. The endpoints mark
  * opposite corners; either order is accepted. A degenerate (zero-width
  * or zero-height) rect collapses to a single brush-stamped line.
+ *
+ * Vertical edges skip the corner rows so the four corner pixels get
+ * painted exactly once (the horizontal edges cover them). Before that
+ * fix, semi-transparent outlines had saturated corners because each
+ * corner pixel received two source-over composites instead of one.
  */
 export function drawRectOutline(
   dst: RawImage,
@@ -55,9 +60,16 @@ export function drawRectOutline(
   const yMax = Math.max(y0, y1);
   // Four edges via drawLine so brush size/opacity propagate naturally.
   drawLine(dst, xMin, yMin, xMax, yMin, brush); // top
-  drawLine(dst, xMin, yMax, xMax, yMax, brush); // bottom
-  drawLine(dst, xMin, yMin, xMin, yMax, brush); // left
-  drawLine(dst, xMax, yMin, xMax, yMax, brush); // right
+  if (yMax !== yMin) {
+    drawLine(dst, xMin, yMax, xMax, yMax, brush); // bottom
+  }
+  // Verticals skip corner rows — corners are already covered above.
+  if (yMax - yMin >= 2) {
+    drawLine(dst, xMin, yMin + 1, xMin, yMax - 1, brush); // left
+    if (xMax !== xMin) {
+      drawLine(dst, xMax, yMin + 1, xMax, yMax - 1, brush); // right
+    }
+  }
 }
 
 /**
@@ -204,13 +216,17 @@ function plotEllipse(
     }
   } while (xL <= xR);
   // Ends: close the top/bottom caps for very flat ellipses where the
-  // loop terminated before reaching them.
+  // loop terminated before reaching them. Clamp the cap pixels to the
+  // bbox so the rasterizer never reports points outside it, matching
+  // the contract asserted by the bbox-invariant test.
   while (yT - yB < b) {
-    onPoint(xL - 1, yT);
-    onPoint(xR + 1, yT);
+    const capL = Math.max(xMin, xL - 1);
+    const capR = Math.min(xMax, xR + 1);
+    onPoint(capL, yT);
+    onPoint(capR, yT);
     yT++;
-    onPoint(xL - 1, yB);
-    onPoint(xR + 1, yB);
+    onPoint(capL, yB);
+    onPoint(capR, yB);
     yB--;
   }
 }

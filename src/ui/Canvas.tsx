@@ -379,6 +379,12 @@ function PaintOverlay({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  // Preallocated preview buffer + ImageData for shape-tool drags so we
+  // don't allocate a new Uint8ClampedArray + ImageData per mousemove.
+  // Reset on bitmap size change (see resetPreviewBuffer below).
+  const previewImageRef = useRef<RawImage | null>(null);
+  const previewDataRef = useRef<ImageData | null>(null);
+  const lastShapeBboxRef = useRef<Rect | null>(null);
 
   // Re-render preview whenever selection changes even if no drag is active.
   useEffect(() => {
@@ -420,6 +426,46 @@ function PaintOverlay({
   }
 
   /**
+   * Ensure the preview RawImage + ImageData scratch buffers match the
+   * current bitmap dimensions. Allocates at most once per size change,
+   * so long drag sessions do not push pressure on GC.
+   */
+  function ensurePreviewBuffer(
+    ctx: CanvasRenderingContext2D,
+  ): { preview: RawImage; imageData: ImageData } | null {
+    const w = bitmap.width;
+    const h = bitmap.height;
+    let preview = previewImageRef.current;
+    let imageData = previewDataRef.current;
+    if (!preview || preview.width !== w || preview.height !== h) {
+      preview = createImage(w, h);
+      previewImageRef.current = preview;
+    }
+    if (!imageData || imageData.width !== w || imageData.height !== h) {
+      try {
+        imageData = ctx.createImageData(w, h);
+      } catch {
+        return null;
+      }
+      previewDataRef.current = imageData;
+    }
+    return { preview, imageData };
+  }
+
+  /** Zero the pixels in `rect` of the preallocated preview buffer. */
+  function clearPreviewBboxInBuffer(preview: RawImage, rect: Rect): void {
+    const { x, y, w, h } = rect;
+    const xMin = Math.max(0, x);
+    const yMin = Math.max(0, y);
+    const xMax = Math.min(preview.width, x + w);
+    const yMax = Math.min(preview.height, y + h);
+    for (let yy = yMin; yy < yMax; yy++) {
+      const rowStart = (yy * preview.width + xMin) * 4;
+      preview.data.fill(0, rowStart, rowStart + (xMax - xMin) * 4);
+    }
+  }
+
+  /**
    * Render the overlay preview canvas. Called on every drag step and
    * whenever the selection changes. Draws, in order:
    *   1. Active shape preview (line / rect / ellipse drag) in primary.
@@ -445,13 +491,36 @@ function PaintOverlay({
 
     // 1. Shape-tool preview.
     if (drag?.kind === 'shape') {
-      const preview = createImage(bitmap.width, bitmap.height);
-      const brush: Brush = { size: brushSize, color: primary, opacity };
-      const effective = applyShiftModifier(drag.tool, isShiftHeld());
-      renderShape(effective, preview, drag.x0, drag.y0, drag.x1, drag.y1, brush);
-      const imageData = ctx.createImageData(preview.width, preview.height);
-      imageData.data.set(preview.data);
-      ctx.putImageData(imageData, 0, 0);
+      const buf = ensurePreviewBuffer(ctx);
+      if (buf) {
+        // Clear just the previous bbox instead of the whole buffer so
+        // long drags stay cheap (O(bbox area) per frame, not O(w*h)).
+        const prev = lastShapeBboxRef.current;
+        if (prev) clearPreviewBboxInBuffer(buf.preview, prev);
+        const brush: Brush = { size: brushSize, color: primary, opacity };
+        const effective = applyShiftModifier(drag.tool, isShiftHeld());
+        renderShape(
+          effective,
+          buf.preview,
+          drag.x0,
+          drag.y0,
+          drag.x1,
+          drag.y1,
+          brush,
+        );
+        buf.imageData.data.set(buf.preview.data);
+        ctx.putImageData(buf.imageData, 0, 0);
+        lastShapeBboxRef.current = shapeBbox(drag, brush.size);
+      }
+    } else {
+      // No active shape drag — make sure the cached bbox is cleared so
+      // the next drag starts from a clean slate (no ghost).
+      const prev = lastShapeBboxRef.current;
+      if (prev) {
+        const preview = previewImageRef.current;
+        if (preview) clearPreviewBboxInBuffer(preview, prev);
+        lastShapeBboxRef.current = null;
+      }
     }
 
     // 2. Move ghost: paint the lifted pixels at the current offset so the
@@ -842,4 +911,25 @@ function dragToRect(x0: number, y0: number, x1: number, y1: number): Rect {
   const w = Math.abs(x1 - x0) + 1;
   const h = Math.abs(y1 - y0) + 1;
   return { x, y, w, h };
+}
+
+/**
+ * Conservative bbox for the pixels a shape-drag preview writes, inflated
+ * by the brush radius so subsequent clears erase every painted pixel.
+ * Returns the exact bitmap-pixel rect (not clipped to canvas bounds —
+ * the caller's clearPreviewBboxInBuffer clips).
+ */
+function shapeBbox(
+  drag: { x0: number; y0: number; x1: number; y1: number },
+  brushSize: number,
+): Rect {
+  const r = dragToRect(drag.x0, drag.y0, drag.x1, drag.y1);
+  const halfLo = Math.floor((brushSize - 1) / 2);
+  const halfHi = Math.floor(brushSize / 2);
+  return {
+    x: r.x - halfLo,
+    y: r.y - halfLo,
+    w: r.w + halfLo + halfHi,
+    h: r.h + halfLo + halfHi,
+  };
 }

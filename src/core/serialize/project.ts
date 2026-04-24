@@ -133,9 +133,12 @@ function migrateV1ToV2(v1: ProjectJsonV1): Project {
         height: s.height,
         imageBytes: base64ToBytes(s.imageBase64),
         slicing,
+        // Migrated v1 sheets are always PNG imports (GIFs went through
+        // the 'gif' kind). Keeping `importedFrom` consistent with fresh
+        // v2 imports so downstream consumers don't need a special-case.
+        importedFrom: isGif ? 'gif' : 'png',
       };
       if (s.gifFrames) source.gifFrames = s.gifFrames;
-      if (isGif) source.importedFrom = 'gif';
       // v1 had no `editedFrames`. Nothing to populate.
       return source;
     }),
