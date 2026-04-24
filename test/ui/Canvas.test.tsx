@@ -102,6 +102,51 @@ describe('Canvas — pencil tool', () => {
     const post = useStore.getState().sheetBitmaps[src.id]!;
     expect(post.data[(1 * post.width + 1) * 4 + 3]).toBe(0);
   });
+
+  it('lost mouseup mid-drag: a later button-less mousemove does not stretch the stroke across the canvas', () => {
+    // Regression: the browser occasionally drops mouseup (e.g., when the
+    // cursor leaves the window mid-drag). Without the ev.buttons === 0
+    // guard, subsequent mousemoves with no button held kept calling
+    // stampLine from the stroke's lastX/lastY to the cursor, producing
+    // phantom lines spanning the canvas. See user report with the
+    // character sprite + radiating diagonal lines.
+    useStore.getState().setActiveTool('pencil');
+    useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });
+    const { src, bmp, container } = mountForSheet({ w: 16, h: 16 });
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay, 0, 0);
+
+    // Mousedown at (1, 1): stampDot paints the click pixel.
+    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5, buttons: 1 });
+    expect(bmp.data[(1 * bmp.width + 1) * 4]).toBe(200);
+
+    // Now the imagined sequence: the cursor leaves the window with the
+    // button still pressed, the user releases the button OUTSIDE the
+    // window (mouseup on window is dropped), and then the cursor returns
+    // to (12, 12) with NO button pressed. The post-lost-mouseup move
+    // should NOT paint a line back to (12, 12).
+    fireEvent.mouseMove(window, { clientX: 12.5, clientY: 12.5, buttons: 0 });
+
+    // The pencil pixel at (1, 1) is still painted. The pixel at (12, 12)
+    // should NOT be, and no intermediate pixel on the line from (1,1) to
+    // (12,12) should be either.
+    expect(bmp.data[(12 * bmp.width + 12) * 4 + 3]).toBe(0);
+    expect(bmp.data[(5 * bmp.width + 5) * 4 + 3]).toBe(0);
+    expect(bmp.data[(8 * bmp.width + 8) * 4 + 3]).toBe(0);
+
+    // Drag state cleared, one delta on the undo stack from the implicit
+    // commit of the original click.
+    expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
+
+    // A subsequent legitimate click at (12, 12) lands a SINGLE pixel, not
+    // a line from (1, 1).
+    fireEvent.mouseDown(overlay, { button: 0, clientX: 12.5, clientY: 12.5, buttons: 1 });
+    fireEvent.mouseUp(window);
+    expect(bmp.data[(12 * bmp.width + 12) * 4]).toBe(200);
+    // Still no line-interior pixels.
+    expect(bmp.data[(5 * bmp.width + 5) * 4 + 3]).toBe(0);
+    expect(bmp.data[(8 * bmp.width + 8) * 4 + 3]).toBe(0);
+  });
 });
 
 describe('Canvas — eyedropper', () => {
@@ -176,7 +221,7 @@ describe('Canvas — line tool', () => {
     stubRect(overlay);
     // Draw from (1,1) to (4,4).
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5 });
     // Diagonal pixels should be painted.
     for (let i = 1; i <= 4; i++) {
@@ -210,7 +255,7 @@ describe('Canvas — rect tool (with Shift fills)', () => {
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
     // Walk many intermediate positions.
     for (let i = 0; i < 20; i++) {
-      fireEvent.mouseMove(window, { clientX: 2.5 + i * 0.1, clientY: 2.5 + i * 0.1 });
+      fireEvent.mouseMove(window, { clientX: 2.5 + i * 0.1, clientY: 2.5 + i * 0.1 , buttons: 1});
     }
     fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5 });
     // Perimeter painted; a pixel clearly outside the final rect stays
@@ -228,7 +273,7 @@ describe('Canvas — rect tool (with Shift fills)', () => {
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5 });
     // Perimeter at (1,1)-(4,4) is painted; interior (2,2) is not.
     expect(bmp.data[(1 * bmp.width + 1) * 4 + 3]).toBe(255);
@@ -243,7 +288,7 @@ describe('Canvas — rect tool (with Shift fills)', () => {
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     // Shift held on mouseup.
     fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5, shiftKey: true });
     // Interior is now filled.
@@ -264,7 +309,7 @@ describe('Canvas — marquee + move', () => {
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 3.5, clientY: 3.5 });
+    fireEvent.mouseMove(window, { clientX: 3.5, clientY: 3.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 3.5, clientY: 3.5 });
     const sel = useStore.getState().selection!;
     expect(sel).not.toBeNull();
@@ -297,7 +342,7 @@ describe('Canvas — marquee + move', () => {
       useStore.getState().setActiveTool('move');
     });
     fireEvent.mouseDown(overlay1, { button: 0, clientX: 2.5, clientY: 2.5 });
-    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 5.5 });
+    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 5.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 5.5, clientY: 5.5 });
 
     // Original pixel cleared, new pixel at (5,5) painted.
@@ -340,7 +385,7 @@ describe('Canvas — slice-rect tool', () => {
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 2.5 });
-    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 6.5 });
+    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 6.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 5.5, clientY: 6.5 });
     const slicing = useStore
       .getState()

@@ -727,6 +727,17 @@ function PaintOverlay({
     function onMove(ev: MouseEvent) {
       const d = dragRef.current;
       if (!d) return;
+      // Lost-mouseup guard: if no mouse button is pressed but we still
+      // think a drag is active, the browser dropped a mouseup (typically
+      // because the cursor left the window mid-drag). Without this, the
+      // next mousemoves would keep calling stampLine from the stroke's
+      // stale lastX/lastY to the cursor, painting phantom lines across
+      // the canvas between the old drag origin and wherever the user
+      // now moves. Treat as an implicit mouseup and commit the drag.
+      if (ev.buttons === 0) {
+        onUp(ev);
+        return;
+      }
       shiftRef.current = ev.shiftKey;
       const p = eventToPixel(ev.clientX, ev.clientY);
       if (!p) return;

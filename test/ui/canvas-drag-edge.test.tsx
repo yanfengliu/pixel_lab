@@ -82,7 +82,7 @@ describe('Canvas — I9: dragging outside canvas bounds does not freeze', () => 
     // fix, eventToPixel returned null here and the preview/mouseup
     // froze the endpoint at (1,1). After the fix the line should reach
     // the right-hand edge.
-    fireEvent.mouseMove(window, { clientX: 500, clientY: 1.5 });
+    fireEvent.mouseMove(window, { clientX: 500, clientY: 1.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 500, clientY: 1.5 });
     // The rightmost pixel on row 1 should be opaque.
     expect(bmp.data[(1 * bmp.width + (bmp.width - 1)) * 4 + 3]).toBe(255);
@@ -163,7 +163,7 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1); // only the pencil stroke
     // Mouseup at a different pixel completes the move: original cell
     // stays cleared, new cell is painted.
-    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 5.5 });
+    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 5.5 , buttons: 1});
     fireEvent.mouseUp(window, { clientX: 5.5, clientY: 5.5 });
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(0);
     expect(bmp.data[(5 * bmp.width + 5) * 4]).toBe(200);
@@ -304,7 +304,7 @@ describe('Canvas — R2-I12: shape preview cleared on tool switch mid-drag', () 
     stubRect(overlay);
     // Start a shape drag.
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     // Reset the counter so we only count clears triggered by the switch.
     clearRectCalls.count = 0;
     // Switch tools mid-drag (simulates B/E/I/G/etc. keyboard shortcuts).
@@ -323,7 +323,7 @@ describe('Canvas — R2-I12: shape preview cleared on tool switch mid-drag', () 
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 });
+    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     // Switch tools; cleanup clears dragRef.
     act(() => {
       useStore.getState().setActiveTool('pencil');
