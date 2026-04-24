@@ -107,3 +107,92 @@ describe('ToolPalette', () => {
     expect(useStore.getState().redoStacks[src.id]).toHaveLength(1);
   });
 });
+
+describe('ToolPalette — phase 2 tools', () => {
+  beforeEach(() => {
+    resetStore();
+    cleanup();
+  });
+
+  it('renders phase 2 tool buttons (line, rect outline/filled, ellipse, marquee, move, slice)', () => {
+    const { getByRole } = render(<ToolPalette />);
+    expect(getByRole('button', { name: /^line$/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /rectangle outline/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /rectangle filled/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /ellipse outline/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /ellipse filled/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /marquee/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /^move$/i })).toBeInTheDocument();
+    expect(getByRole('button', { name: /slice/i })).toBeInTheDocument();
+  });
+
+  it('shortcut L selects the line tool', () => {
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(useStore.getState().activeTool).toBe('line');
+  });
+
+  it('shortcut U selects the rectangle (outline) tool', () => {
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 'u' });
+    expect(useStore.getState().activeTool).toBe('rectOutline');
+  });
+
+  it('shortcut M selects the marquee tool', () => {
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(useStore.getState().activeTool).toBe('marquee');
+  });
+
+  it('shortcut V selects the move tool', () => {
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 'v' });
+    expect(useStore.getState().activeTool).toBe('move');
+  });
+
+  it('shortcut S selects the slice tool only when slicing is manual', () => {
+    // Create a sheet with manual slicing.
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    useStore.getState().selectSource(src.id);
+    useStore.getState().updateSlicing(src.id, { kind: 'manual', rects: [] });
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 's' });
+    expect(useStore.getState().activeTool).toBe('slice');
+  });
+
+  it('shortcut S does nothing when slicing is not manual', () => {
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    useStore.getState().selectSource(src.id);
+    // Default slicing is grid; leave it.
+    useStore.getState().setActiveTool('pencil');
+    render(<ToolPalette />);
+    fireEvent.keyDown(window, { key: 's' });
+    expect(useStore.getState().activeTool).toBe('pencil');
+  });
+
+  it('slice button is disabled (aria-disabled) when slicing is not manual', () => {
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    useStore.getState().selectSource(src.id);
+    const { getByRole } = render(<ToolPalette />);
+    const btn = getByRole('button', { name: /slice/i });
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.getAttribute('title') ?? '').toMatch(/manual/i);
+  });
+
+  it('slice button is enabled when slicing is manual', () => {
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 's', width: 4, height: 4 });
+    useStore.getState().selectSource(src.id);
+    useStore.getState().updateSlicing(src.id, { kind: 'manual', rects: [] });
+    const { getByRole } = render(<ToolPalette />);
+    const btn = getByRole('button', { name: /slice/i });
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
+  });
+});

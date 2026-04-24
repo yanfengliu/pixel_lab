@@ -5,15 +5,47 @@ import type { Tool } from '../core/types';
 interface ToolDef {
   key: Tool;
   label: string;
-  shortcut: string;
+  shortcut?: string;
   glyph: string;
 }
 
-const TOOLS: ToolDef[] = [
-  { key: 'pencil', label: 'Pencil', shortcut: 'B', glyph: '✎' },
-  { key: 'eraser', label: 'Eraser', shortcut: 'E', glyph: '◇' },
-  { key: 'eyedropper', label: 'Eyedropper', shortcut: 'I', glyph: '⊙' },
-  { key: 'bucket', label: 'Bucket', shortcut: 'G', glyph: '◈' },
+/** Tool groups are rendered with a thin separator between them. */
+interface ToolGroup {
+  key: string;
+  tools: ToolDef[];
+}
+
+const GROUPS: ToolGroup[] = [
+  {
+    key: 'paint',
+    tools: [
+      { key: 'pencil', label: 'Pencil', shortcut: 'B', glyph: '✎' },
+      { key: 'eraser', label: 'Eraser', shortcut: 'E', glyph: '◇' },
+      { key: 'eyedropper', label: 'Eyedropper', shortcut: 'I', glyph: '⊙' },
+      { key: 'bucket', label: 'Bucket', shortcut: 'G', glyph: '◈' },
+    ],
+  },
+  {
+    key: 'shapes',
+    tools: [
+      { key: 'line', label: 'Line', shortcut: 'L', glyph: '╱' },
+      { key: 'rectOutline', label: 'Rectangle Outline', shortcut: 'U', glyph: '▯' },
+      { key: 'rectFilled', label: 'Rectangle Filled', glyph: '▮' },
+      { key: 'ellipseOutline', label: 'Ellipse Outline', glyph: '○' },
+      { key: 'ellipseFilled', label: 'Ellipse Filled', glyph: '●' },
+    ],
+  },
+  {
+    key: 'selection',
+    tools: [
+      { key: 'marquee', label: 'Marquee Select', shortcut: 'M', glyph: '⬚' },
+      { key: 'move', label: 'Move', shortcut: 'V', glyph: '✚' },
+    ],
+  },
+  {
+    key: 'slice',
+    tools: [{ key: 'slice', label: 'Slice Rect', shortcut: 'S', glyph: '✂' }],
+  },
 ];
 
 const SHORTCUT_TO_TOOL: Record<string, Tool> = {
@@ -21,13 +53,19 @@ const SHORTCUT_TO_TOOL: Record<string, Tool> = {
   e: 'eraser',
   i: 'eyedropper',
   g: 'bucket',
+  l: 'line',
+  u: 'rectOutline',
+  m: 'marquee',
+  v: 'move',
+  // 's' handled specially — only when slicing is manual.
 };
 
 /**
  * Tool palette with click-to-select and keyboard shortcuts.
  *
  * Shortcuts:
- * - B/E/I/G: select tool.
+ * - B/E/I/G/L/U/M/V: select tool.
+ * - S: slice rect, only when the selected source's slicing is manual.
  * - [ / ]: shrink / grow brush.
  * - X: swap primary/secondary color.
  * - Ctrl+Z / Ctrl+Shift+Z: undo / redo on the selected source.
@@ -45,15 +83,19 @@ export function ToolPalette() {
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
 
+  // The slice tool is ghosted unless the selected source has manual
+  // slicing; shortcut `S` and clicks both respect that.
+  const sliceAvailable = useStore((s) => {
+    if (!s.selectedSourceId) return false;
+    const src = s.project.sources.find((x) => x.id === s.selectedSourceId);
+    return src?.slicing.kind === 'manual';
+  });
+
   useEffect(() => {
     function isEditableTarget(target: EventTarget | null): boolean {
       if (!(target instanceof HTMLElement)) return false;
       const tag = target.tagName;
-      return (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        target.isContentEditable
-      );
+      return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
     }
     function onKey(ev: KeyboardEvent) {
       if (isEditableTarget(ev.target)) return;
@@ -69,6 +111,11 @@ export function ToolPalette() {
       }
       // Bare-key shortcuts.
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (k === 's') {
+        // Guard: slice tool requires manual slicing.
+        if (sliceAvailable) setActiveTool('slice');
+        return;
+      }
       if (k in SHORTCUT_TO_TOOL) {
         setActiveTool(SHORTCUT_TO_TOOL[k]!);
         return;
@@ -88,22 +135,47 @@ export function ToolPalette() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setActiveTool, setBrushSize, swapColors, undo, redo]);
+  }, [setActiveTool, setBrushSize, swapColors, undo, redo, sliceAvailable]);
 
   return (
     <div className="tool-palette" role="toolbar" aria-label="Drawing tools">
-      {TOOLS.map((t) => (
-        <button
-          key={t.key}
-          className={`tool-btn${activeTool === t.key ? ' active' : ''}`}
-          title={`${t.label} (${t.shortcut})`}
-          aria-label={t.label}
-          aria-pressed={activeTool === t.key}
-          onClick={() => setActiveTool(t.key)}
-        >
-          <span className="glyph" aria-hidden="true">{t.glyph}</span>
-          <span className="shortcut">{t.shortcut}</span>
-        </button>
+      {GROUPS.map((group, gi) => (
+        <div key={group.key} className={`tool-group tool-group-${group.key}`}>
+          {gi > 0 ? <div className="tool-divider" aria-hidden="true" /> : null}
+          {group.tools.map((t) => {
+            const isSlice = t.key === 'slice';
+            const disabled = isSlice && !sliceAvailable;
+            const title =
+              disabled
+                ? 'Switch slicing to Manual to use'
+                : t.shortcut
+                  ? `${t.label} (${t.shortcut})`
+                  : t.label;
+            return (
+              <button
+                key={t.key}
+                className={`tool-btn${activeTool === t.key ? ' active' : ''}${
+                  disabled ? ' ghosted' : ''
+                }`}
+                title={title}
+                aria-label={t.label}
+                aria-pressed={activeTool === t.key}
+                aria-disabled={disabled}
+                onClick={() => {
+                  if (disabled) return;
+                  setActiveTool(t.key);
+                }}
+              >
+                <span className="glyph" aria-hidden="true">
+                  {t.glyph}
+                </span>
+                {t.shortcut ? (
+                  <span className="shortcut">{t.shortcut}</span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       ))}
       <div className="brush-size-row" title="Brush size ([ / ])">
         <button
@@ -111,7 +183,7 @@ export function ToolPalette() {
           aria-label="Decrease brush size"
           onClick={() => setBrushSize(brushSize - 1)}
         >
-          −
+          &minus;
         </button>
         <span className="size-readout">{brushSize}</span>
         <button

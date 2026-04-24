@@ -1,6 +1,7 @@
-import { useEffect, useRef, useMemo, useState } from 'react';
-import type { Rect, Source, Slicing, ManualSlicing, Tool } from '../core/types';
+import { useEffect, useRef, useMemo } from 'react';
+import type { Rect, Source, Slicing, Tool } from '../core/types';
 import type { RawImage, RGBA } from '../core/image';
+import { createImage } from '../core/image';
 import { slice } from '../core/slicers';
 import {
   stampDot,
@@ -9,6 +10,13 @@ import {
   stampEraseLine,
   floodFill,
   samplePixel,
+  drawLine,
+  drawRectOutline,
+  drawRectFilled,
+  drawEllipseOutline,
+  drawEllipseFilled,
+  extractSelection,
+  pasteSelection,
   type Brush,
 } from '../core/drawing';
 import { drawImageToCanvas } from './rendering';
@@ -23,17 +31,22 @@ interface Props {
 }
 
 /**
- * Zoomable view of a source. The mouse-behavior on the canvas depends on
- * the current tool:
+ * Zoomable view of a source with tool-dispatched mouse handling.
  *
- * - pencil / eraser: drag to paint a stroke. Snapshot on down, commit
- *   delta on up.
- * - eyedropper: single click samples the pixel under the cursor into
- *   `primaryColor` (Alt-click sets secondary).
- * - bucket: single click floods the reachable region then commits.
- * - When slicing is `manual`, the manual-rect overlay renders **in
- *   addition** to the paint overlay. The paint overlay sits on top and
- *   absorbs mouse events for paint tools.
+ * Each tool is a mouse-behavior mode:
+ * - pencil / eraser: brush-stamped drag that commits on mouseup.
+ * - eyedropper: single-click samples primary/secondary color.
+ * - bucket: single-click flood fill.
+ * - line / rect (outline or filled) / ellipse (outline or filled): drag
+ *   renders a preview on the overlay canvas; mouseup rasterizes into the
+ *   bitmap. Shift held on mouseup converts rectOutline/ellipseOutline to
+ *   the filled variant without mutating activeTool.
+ * - marquee: drag defines a rectangular selection, stored on the store.
+ * - move: drag moves the selection contents within the same frame,
+ *   committing a single stroke delta. No-op if the drag starts outside
+ *   the active selection.
+ * - slice: drag appends a rect to manual slicing. Only available when
+ *   `slicing.kind === 'manual'`.
  */
 export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -48,11 +61,14 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
   const setSecondaryColor = useStore((s) => s.setSecondaryColor);
   const beginStroke = useStore((s) => s.beginStroke);
   const prepared = useStore((s) => s.prepared);
+  const selection = useStore((s) => s.selection);
+  const setSelection = useStore((s) => s.setSelection);
+  const clearSelection = useStore((s) => s.clearSelection);
 
   const frameIdx = selectedFrameIndex[source.id] ?? 0;
 
-  // Pick the active paint target: sheets paint on the full bitmap,
-  // sequences on the selected frame's prepared image.
+  // Paint target: sheets paint on the full bitmap; sequences on the frame's
+  // prepared image.
   const paintTarget: RawImage =
     source.kind === 'sheet'
       ? bitmap
@@ -60,8 +76,6 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
 
   useEffect(() => {
     if (canvasRef.current) drawImageToCanvas(canvasRef.current, paintTarget);
-    // bitmap is used in the dep list so the canvas redraws after the
-    // store swaps a new prepared frame entry (undo / redo path).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paintTarget, paintTarget.data]);
 
@@ -76,7 +90,13 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
     }
   }, [paintTarget, source.slicing, onSliceError]);
 
-  const manual = source.slicing.kind === 'manual' ? source.slicing : null;
+  // Current selection on this source+frame, if any.
+  const activeSelection =
+    selection &&
+    selection.sourceId === source.id &&
+    selection.frameIndex === frameIdx
+      ? selection
+      : null;
 
   return (
     <div
@@ -91,20 +111,11 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
         className="canvas-image"
         style={{ width: paintTarget.width * zoom, height: paintTarget.height * zoom }}
       />
-      {manual ? (
-        <ManualOverlay
-          bitmap={paintTarget}
-          zoom={zoom}
-          slicing={manual}
-          onChange={onSlicingChange}
-        />
-      ) : (
-        <RectsOverlay rects={rects} zoom={zoom} onClickRect={
-          source.kind === 'sheet'
-            ? (i) => setSelectedFrameIndex(source.id, i)
-            : undefined
-        } />
-      )}
+      <RectsOverlay rects={rects} zoom={zoom} onClickRect={
+        source.kind === 'sheet' && activeTool !== 'slice'
+          ? (i) => setSelectedFrameIndex(source.id, i)
+          : undefined
+      } />
       <PaintOverlay
         source={source}
         bitmap={paintTarget}
@@ -114,7 +125,14 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
         opacity={opacity}
         brushSize={brushSize}
         frameIndex={frameIdx}
+        slicing={source.slicing}
+        selection={activeSelection?.sel ?? null}
         beginStroke={beginStroke}
+        setSelection={(sel) =>
+          setSelection({ sourceId: source.id, frameIndex: frameIdx, sel })
+        }
+        clearSelection={clearSelection}
+        onSlicingChange={onSlicingChange}
         onSample={(color, alt) =>
           alt ? setSecondaryColor(color) : setPrimaryColor(color)
         }
@@ -156,6 +174,59 @@ function RectsOverlay({
   );
 }
 
+/**
+ * Drag state union — different tools need different captured state at
+ * mousedown so we discriminate rather than share a single loose struct.
+ */
+type DragState =
+  | {
+      kind: 'brush';
+      tool: 'pencil' | 'eraser';
+      commit: () => void;
+      lastX: number;
+      lastY: number;
+      brush: Brush;
+    }
+  | {
+      kind: 'shape';
+      tool: 'line' | 'rectOutline' | 'rectFilled' | 'ellipseOutline' | 'ellipseFilled';
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+    }
+  | {
+      kind: 'marquee';
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+    }
+  | {
+      kind: 'move';
+      /** Original selection rect snapshot (start of drag). */
+      startRect: Rect;
+      /** Pixels lifted from the source frame. */
+      pixels: RawImage;
+      /** Mask from the selection. */
+      mask: Uint8Array;
+      /** Grab anchor — where inside the bitmap the mouse went down. */
+      grabX: number;
+      grabY: number;
+      /** Current offset applied to the lifted pixels. */
+      dx: number;
+      dy: number;
+      /** Commit closure into the undo stack once the move resolves. */
+      commit: () => void;
+    }
+  | {
+      kind: 'slice';
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+    };
+
 function PaintOverlay({
   source,
   bitmap,
@@ -165,7 +236,12 @@ function PaintOverlay({
   opacity,
   brushSize,
   frameIndex,
+  slicing,
+  selection,
   beginStroke,
+  setSelection,
+  clearSelection,
+  onSlicingChange,
   onSample,
   onRepaintCanvas,
 }: {
@@ -177,17 +253,24 @@ function PaintOverlay({
   opacity: number;
   brushSize: number;
   frameIndex: number;
+  slicing: Slicing;
+  selection: import('../core/drawing').Selection | null;
   beginStroke: (sourceId: string, frameIndex: number) => () => void;
+  setSelection: (sel: import('../core/drawing').Selection) => void;
+  clearSelection: () => void;
+  onSlicingChange: (slicing: Slicing) => void;
   onSample: (color: RGBA, alt: boolean) => void;
   onRepaintCanvas: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{
-    commit: () => void;
-    lastX: number;
-    lastY: number;
-    brush: Brush;
-  } | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+
+  // Re-render preview whenever selection changes even if no drag is active.
+  useEffect(() => {
+    drawPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, bitmap.width, bitmap.height, zoom]);
 
   function eventToPixel(clientX: number, clientY: number) {
     const rect = rootRef.current?.getBoundingClientRect();
@@ -200,61 +283,325 @@ function PaintOverlay({
     };
   }
 
+  function pointInRect(p: { x: number; y: number }, r: Rect): boolean {
+    return p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
+  }
+
+  function clearPreview() {
+    const c = previewCanvasRef.current;
+    if (!c) return;
+    try {
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, c.width, c.height);
+    } catch {
+      // jsdom without canvas package.
+    }
+  }
+
+  /**
+   * Render the overlay preview canvas. Called on every drag step and
+   * whenever the selection changes. Draws, in order:
+   *   1. Active shape preview (line / rect / ellipse drag) in primary.
+   *   2. Move ghost (pixels-being-dragged at current offset).
+   *   3. Marquee dashed rect (drag OR current selection).
+   *   4. Slice tool drag rect.
+   */
+  function drawPreview() {
+    const c = previewCanvasRef.current;
+    if (!c) return;
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    let ctx: CanvasRenderingContext2D | null;
+    try {
+      ctx = c.getContext('2d');
+    } catch {
+      return;
+    }
+    if (!ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    const drag = dragRef.current;
+
+    // 1. Shape-tool preview.
+    if (drag?.kind === 'shape') {
+      const preview = createImage(bitmap.width, bitmap.height);
+      const brush: Brush = { size: brushSize, color: primary, opacity };
+      const effective = applyShiftModifier(drag.tool, isShiftHeld());
+      renderShape(effective, preview, drag.x0, drag.y0, drag.x1, drag.y1, brush);
+      const imageData = ctx.createImageData(preview.width, preview.height);
+      imageData.data.set(preview.data);
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    // 2. Move ghost: paint the lifted pixels at the current offset so the
+    //    user sees where the release will land.
+    if (drag?.kind === 'move') {
+      const imageData = ctx.createImageData(drag.pixels.width, drag.pixels.height);
+      imageData.data.set(drag.pixels.data);
+      ctx.putImageData(imageData, drag.startRect.x + drag.dx, drag.startRect.y + drag.dy);
+    }
+
+    // 3. Marquee: draw either the drag or the existing selection as a
+    //    dashed outline.
+    const marqueeRect = (() => {
+      if (drag?.kind === 'marquee') {
+        return dragToRect(drag.x0, drag.y0, drag.x1, drag.y1);
+      }
+      if (selection) return selection.rect;
+      return null;
+    })();
+    if (marqueeRect) {
+      ctx.save();
+      ctx.strokeStyle = '#6ba7ff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.strokeRect(
+        marqueeRect.x + 0.5,
+        marqueeRect.y + 0.5,
+        marqueeRect.w - 1,
+        marqueeRect.h - 1,
+      );
+      ctx.restore();
+    }
+
+    // 4. Slice drag preview.
+    if (drag?.kind === 'slice') {
+      const r = dragToRect(drag.x0, drag.y0, drag.x1, drag.y1);
+      ctx.save();
+      ctx.strokeStyle = '#60d394';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      ctx.restore();
+    }
+  }
+
   function handleDown(ev: React.MouseEvent) {
-    if (ev.button !== 0) return;
     const p = eventToPixel(ev.clientX, ev.clientY);
     if (!p) return;
 
-    if (activeTool === 'eyedropper') {
-      onSample(samplePixel(bitmap, p.x, p.y), ev.altKey);
+    // Right-click on slice tool deletes the hovered manual rect.
+    if (ev.button === 2 && activeTool === 'slice' && slicing.kind === 'manual') {
+      const idx = slicing.rects.findIndex((r) => pointInRect(p, r));
+      if (idx >= 0) {
+        ev.preventDefault();
+        onSlicingChange({
+          kind: 'manual',
+          rects: slicing.rects.filter((_, i) => i !== idx),
+        });
+      }
       return;
     }
 
-    if (activeTool === 'bucket') {
-      const commit = beginStroke(source.id, frameIndex);
-      floodFill(bitmap, p.x, p.y, primary, opacity);
-      onRepaintCanvas();
-      commit();
-      return;
-    }
+    if (ev.button !== 0) return;
 
-    // Pencil / eraser — start a drag-stroke.
-    const commit = beginStroke(source.id, frameIndex);
-    const brush: Brush = { size: brushSize, color: primary, opacity };
-    if (activeTool === 'pencil') {
-      stampDot(bitmap, p.x, p.y, brush);
-    } else {
-      stampErase(bitmap, p.x, p.y, brushSize);
+    switch (activeTool) {
+      case 'eyedropper':
+        onSample(samplePixel(bitmap, p.x, p.y), ev.altKey);
+        return;
+
+      case 'bucket': {
+        const commit = beginStroke(source.id, frameIndex);
+        floodFill(bitmap, p.x, p.y, primary, opacity);
+        onRepaintCanvas();
+        commit();
+        return;
+      }
+
+      case 'pencil':
+      case 'eraser': {
+        const commit = beginStroke(source.id, frameIndex);
+        const brush: Brush = { size: brushSize, color: primary, opacity };
+        if (activeTool === 'pencil') {
+          stampDot(bitmap, p.x, p.y, brush);
+        } else {
+          stampErase(bitmap, p.x, p.y, brushSize);
+        }
+        onRepaintCanvas();
+        dragRef.current = {
+          kind: 'brush',
+          tool: activeTool,
+          commit,
+          lastX: p.x,
+          lastY: p.y,
+          brush,
+        };
+        return;
+      }
+
+      case 'line':
+      case 'rectOutline':
+      case 'rectFilled':
+      case 'ellipseOutline':
+      case 'ellipseFilled':
+        dragRef.current = {
+          kind: 'shape',
+          tool: activeTool,
+          x0: p.x,
+          y0: p.y,
+          x1: p.x,
+          y1: p.y,
+        };
+        drawPreview();
+        return;
+
+      case 'marquee':
+        // New marquee drag clears any existing selection.
+        clearSelection();
+        dragRef.current = {
+          kind: 'marquee',
+          x0: p.x,
+          y0: p.y,
+          x1: p.x,
+          y1: p.y,
+        };
+        drawPreview();
+        return;
+
+      case 'move': {
+        // Only start a move when the mouse goes down inside the current
+        // selection. Outside is intentionally a no-op (per spec).
+        if (!selection) return;
+        if (!pointInRect(p, selection.rect)) return;
+        const commit = beginStroke(source.id, frameIndex);
+        const { pixels, cleared } = extractSelection(bitmap, selection);
+        // Replace the bitmap's pixels with the "cleared" version so the
+        // painted canvas shows the source region already lifted.
+        bitmap.data.set(cleared.data);
+        onRepaintCanvas();
+        dragRef.current = {
+          kind: 'move',
+          startRect: { ...selection.rect },
+          pixels,
+          mask: selection.mask,
+          grabX: p.x,
+          grabY: p.y,
+          dx: 0,
+          dy: 0,
+          commit,
+        };
+        drawPreview();
+        return;
+      }
+
+      case 'slice':
+        if (slicing.kind !== 'manual') return;
+        dragRef.current = {
+          kind: 'slice',
+          x0: p.x,
+          y0: p.y,
+          x1: p.x,
+          y1: p.y,
+        };
+        drawPreview();
+        return;
     }
-    onRepaintCanvas();
-    dragRef.current = { commit, lastX: p.x, lastY: p.y, brush };
+  }
+
+  // Track Shift state across the drag so the preview can reflect it live.
+  const shiftRef = useRef(false);
+  function isShiftHeld(): boolean {
+    return shiftRef.current;
   }
 
   useEffect(() => {
-    // Listeners attach unconditionally. They read `dragRef.current` at
-    // event time, so firing mouseup before any stroke is harmless, and
-    // we don't miss an up event because an effect hadn't re-run.
     function onMove(ev: MouseEvent) {
       const d = dragRef.current;
       if (!d) return;
+      shiftRef.current = ev.shiftKey;
       const p = eventToPixel(ev.clientX, ev.clientY);
       if (!p) return;
-      if (p.x === d.lastX && p.y === d.lastY) return;
-      if (activeTool === 'pencil') {
-        stampLine(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
-      } else if (activeTool === 'eraser') {
-        stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSize);
+
+      switch (d.kind) {
+        case 'brush': {
+          if (p.x === d.lastX && p.y === d.lastY) return;
+          if (d.tool === 'pencil') {
+            stampLine(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
+          } else {
+            stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSize);
+          }
+          d.lastX = p.x;
+          d.lastY = p.y;
+          onRepaintCanvas();
+          return;
+        }
+        case 'shape':
+          d.x1 = p.x;
+          d.y1 = p.y;
+          drawPreview();
+          return;
+        case 'marquee':
+          d.x1 = p.x;
+          d.y1 = p.y;
+          drawPreview();
+          return;
+        case 'move':
+          d.dx = p.x - d.grabX;
+          d.dy = p.y - d.grabY;
+          drawPreview();
+          return;
+        case 'slice':
+          d.x1 = p.x;
+          d.y1 = p.y;
+          drawPreview();
+          return;
       }
-      d.lastX = p.x;
-      d.lastY = p.y;
-      onRepaintCanvas();
     }
-    function onUp() {
+
+    function onUp(ev: MouseEvent) {
       const d = dragRef.current;
       if (!d) return;
-      d.commit();
-      dragRef.current = null;
+      shiftRef.current = ev.shiftKey;
+      try {
+        switch (d.kind) {
+          case 'brush':
+            d.commit();
+            return;
+          case 'shape': {
+            const effective = applyShiftModifier(d.tool, ev.shiftKey);
+            const commit = beginStroke(source.id, frameIndex);
+            const brush: Brush = { size: brushSize, color: primary, opacity };
+            renderShape(effective, bitmap, d.x0, d.y0, d.x1, d.y1, brush);
+            onRepaintCanvas();
+            commit();
+            return;
+          }
+          case 'marquee': {
+            const rect = dragToRect(d.x0, d.y0, d.x1, d.y1);
+            const mask = new Uint8Array(rect.w * rect.h).fill(1);
+            setSelection({ rect, mask });
+            return;
+          }
+          case 'move': {
+            const nextRect: Rect = {
+              x: d.startRect.x + d.dx,
+              y: d.startRect.y + d.dy,
+              w: d.startRect.w,
+              h: d.startRect.h,
+            };
+            const next = pasteSelection(bitmap, nextRect.x, nextRect.y, d.pixels, d.mask);
+            bitmap.data.set(next.data);
+            onRepaintCanvas();
+            d.commit();
+            // Selection follows the moved pixels to their new location.
+            setSelection({ rect: nextRect, mask: d.mask });
+            return;
+          }
+          case 'slice': {
+            if (slicing.kind !== 'manual') return;
+            const r = dragToRect(d.x0, d.y0, d.x1, d.y1);
+            onSlicingChange({ kind: 'manual', rects: [...slicing.rects, r] });
+            return;
+          }
+        }
+      } finally {
+        dragRef.current = null;
+        clearPreview();
+        // Re-render preview to reflect any selection set in the finally.
+        drawPreview();
+      }
     }
+
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
@@ -262,16 +609,33 @@ function PaintOverlay({
       window.removeEventListener('mouseup', onUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool, bitmap, brushSize, onRepaintCanvas]);
+  }, [activeTool, bitmap, brushSize, primary, opacity, slicing, selection]);
 
-  // When the tool changes between paint and slicing-like modes, this
-  // overlay still mounts so mouse events land here. For eyedropper /
-  // bucket the drag never starts, so we disable cursor hints.
+  // ESC clears an active selection (mimics Aseprite).
+  useEffect(() => {
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === 'Escape' && selection) {
+        clearSelection();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection, clearSelection]);
+
   const cursor = (() => {
     switch (activeTool) {
       case 'pencil':
       case 'eraser':
+      case 'line':
+      case 'rectOutline':
+      case 'rectFilled':
+      case 'ellipseOutline':
+      case 'ellipseFilled':
+      case 'marquee':
+      case 'slice':
         return 'crosshair';
+      case 'move':
+        return selection ? 'move' : 'not-allowed';
       case 'bucket':
         return 'cell';
       case 'eyedropper':
@@ -282,124 +646,76 @@ function PaintOverlay({
   })();
 
   return (
-    <div
-      ref={rootRef}
-      className="overlay paint-overlay"
-      style={{ cursor, pointerEvents: 'auto' }}
-      onMouseDown={handleDown}
-    />
+    <>
+      <canvas
+        ref={previewCanvasRef}
+        className="overlay preview-overlay"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: bitmap.width * zoom,
+          height: bitmap.height * zoom,
+          pointerEvents: 'none',
+          imageRendering: 'pixelated',
+        }}
+      />
+      <div
+        ref={rootRef}
+        className="overlay paint-overlay"
+        style={{ cursor, pointerEvents: 'auto' }}
+        onMouseDown={handleDown}
+        onContextMenu={(e) => {
+          // Suppress the browser menu only when the slice tool may want
+          // to act on right-click.
+          if (activeTool === 'slice') e.preventDefault();
+        }}
+      />
+    </>
   );
 }
 
-function ManualOverlay({
-  bitmap,
-  zoom,
-  slicing,
-  onChange,
-}: {
-  bitmap: RawImage;
-  zoom: number;
-  slicing: ManualSlicing;
-  onChange: (slicing: Slicing) => void;
-}) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [draft, setDraft] = useState<Rect | null>(null);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+function applyShiftModifier(
+  tool: 'line' | 'rectOutline' | 'rectFilled' | 'ellipseOutline' | 'ellipseFilled',
+  shift: boolean,
+): 'line' | 'rectOutline' | 'rectFilled' | 'ellipseOutline' | 'ellipseFilled' {
+  if (!shift) return tool;
+  if (tool === 'rectOutline') return 'rectFilled';
+  if (tool === 'ellipseOutline') return 'ellipseFilled';
+  return tool;
+}
 
-  function eventToPixel(
-    clientX: number,
-    clientY: number,
-  ): { x: number; y: number } | null {
-    const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    const x = Math.floor((clientX - rect.left) / zoom);
-    const y = Math.floor((clientY - rect.top) / zoom);
-    return {
-      x: Math.max(0, Math.min(bitmap.width - 1, x)),
-      y: Math.max(0, Math.min(bitmap.height - 1, y)),
-    };
+function renderShape(
+  tool: 'line' | 'rectOutline' | 'rectFilled' | 'ellipseOutline' | 'ellipseFilled',
+  dst: RawImage,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  brush: Brush,
+): void {
+  switch (tool) {
+    case 'line':
+      drawLine(dst, x0, y0, x1, y1, brush);
+      return;
+    case 'rectOutline':
+      drawRectOutline(dst, x0, y0, x1, y1, brush);
+      return;
+    case 'rectFilled':
+      drawRectFilled(dst, x0, y0, x1, y1, brush);
+      return;
+    case 'ellipseOutline':
+      drawEllipseOutline(dst, x0, y0, x1, y1, brush);
+      return;
+    case 'ellipseFilled':
+      drawEllipseFilled(dst, x0, y0, x1, y1, brush);
+      return;
   }
+}
 
-  function handleDown(ev: React.MouseEvent) {
-    if (ev.button !== 0) return;
-    const p = eventToPixel(ev.clientX, ev.clientY);
-    if (!p) return;
-    dragStartRef.current = p;
-    setDraft({ x: p.x, y: p.y, w: 1, h: 1 });
-  }
-
-  useEffect(() => {
-    if (!draft) return;
-    const onMove = (ev: MouseEvent) => {
-      const start = dragStartRef.current;
-      if (!start) return;
-      const p = eventToPixel(ev.clientX, ev.clientY);
-      if (!p) return;
-      const x = Math.min(start.x, p.x);
-      const y = Math.min(start.y, p.y);
-      const w = Math.abs(p.x - start.x) + 1;
-      const h = Math.abs(p.y - start.y) + 1;
-      setDraft({ x, y, w, h });
-    };
-    const onUp = () => {
-      const current = dragStartRef.current;
-      dragStartRef.current = null;
-      setDraft((d) => {
-        if (d && current) {
-          onChange({ kind: 'manual', rects: [...slicing.rects, d] });
-        }
-        return null;
-      });
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft !== null]);
-
-  function removeRect(idx: number) {
-    onChange({
-      kind: 'manual',
-      rects: slicing.rects.filter((_, i) => i !== idx),
-    });
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      className="overlay manual"
-      onMouseDown={handleDown}
-    >
-      {slicing.rects.map((r, i) => (
-        <div
-          key={i}
-          className="rect-outline"
-          style={{
-            left: r.x * zoom,
-            top: r.y * zoom,
-            width: r.w * zoom,
-            height: r.h * zoom,
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            removeRect(i);
-          }}
-        />
-      ))}
-      {draft ? (
-        <div
-          className="rect-outline selected"
-          style={{
-            left: draft.x * zoom,
-            top: draft.y * zoom,
-            width: draft.w * zoom,
-            height: draft.h * zoom,
-          }}
-        />
-      ) : null}
-    </div>
-  );
+function dragToRect(x0: number, y0: number, x1: number, y1: number): Rect {
+  const x = Math.min(x0, x1);
+  const y = Math.min(y0, y1);
+  const w = Math.abs(x1 - x0) + 1;
+  const h = Math.abs(y1 - y0) + 1;
+  return { x, y, w, h };
 }

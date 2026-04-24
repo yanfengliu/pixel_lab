@@ -341,4 +341,48 @@ describe('store: setSelectedFrameIndex', () => {
     expect(useStore.getState().selectedFrameIndex['src-a']).toBe(2);
     expect(useStore.getState().selectedFrameIndex['src-b']).toBe(5);
   });
+
+  it('clears the active selection when the frame changes', () => {
+    const src = useStore
+      .getState()
+      .createBlankSource({
+        kind: 'sequence',
+        name: 'anim',
+        width: 8,
+        height: 8,
+        frameCount: 3,
+      });
+    useStore.getState().setSelection({
+      sourceId: src.id,
+      frameIndex: 0,
+      sel: { rect: { x: 1, y: 1, w: 4, h: 4 }, mask: new Uint8Array(16).fill(1) },
+    });
+    expect(useStore.getState().selection).not.toBeNull();
+    useStore.getState().setSelectedFrameIndex(src.id, 1);
+    expect(useStore.getState().selection).toBeNull();
+  });
+});
+
+describe('store: selection', () => {
+  beforeEach(() => resetStore());
+
+  it('setSelection stores the selection', () => {
+    const sel = {
+      sourceId: 'src-a',
+      frameIndex: 0,
+      sel: { rect: { x: 0, y: 0, w: 2, h: 2 }, mask: new Uint8Array(4).fill(1) },
+    };
+    useStore.getState().setSelection(sel);
+    expect(useStore.getState().selection).toEqual(sel);
+  });
+
+  it('clearSelection wipes the selection', () => {
+    useStore.getState().setSelection({
+      sourceId: 'src-a',
+      frameIndex: 0,
+      sel: { rect: { x: 0, y: 0, w: 2, h: 2 }, mask: new Uint8Array(4).fill(1) },
+    });
+    useStore.getState().clearSelection();
+    expect(useStore.getState().selection).toBeNull();
+  });
 });

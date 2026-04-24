@@ -95,8 +95,25 @@ export interface Project {
   swatches?: string[];
 }
 
-/** Phase 1 paint tools. Shape/selection tools land in Phase 2. */
-export type Tool = 'pencil' | 'eraser' | 'eyedropper' | 'bucket';
+/**
+ * Drawing tools available to the user. Phase 1 tools (paint) plus Phase 2
+ * tools (shapes, selection, move, slice). The Shift-to-fill shape modifier
+ * is applied at the canvas-handler layer rather than by mutating `activeTool`,
+ * so both the outline and filled tool keys live here permanently.
+ */
+export type Tool =
+  | 'pencil'
+  | 'eraser'
+  | 'eyedropper'
+  | 'bucket'
+  | 'line'
+  | 'rectOutline'
+  | 'rectFilled'
+  | 'ellipseOutline'
+  | 'ellipseFilled'
+  | 'marquee'
+  | 'move'
+  | 'slice';
 
 /** Runtime-only derived data; never serialized. */
 export interface PreparedSource {

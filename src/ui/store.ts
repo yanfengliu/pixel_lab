@@ -18,6 +18,7 @@ import {
   computeDelta,
   redoDelta,
   undoDelta,
+  type Selection,
   type StrokeDelta,
 } from '../core/drawing';
 import type { DecodedImport } from '../io/file';
@@ -58,6 +59,12 @@ export interface StoreState {
   undoStacks: Record<Id, StrokeDelta[]>;
   redoStacks: Record<Id, StrokeDelta[]>;
 
+  /**
+   * Current marquee selection, if any. Selection is per-frame, not
+   * persisted, and wiped on frame switch (see `setSelectedFrameIndex`).
+   */
+  selection: { sourceId: Id; frameIndex: number; sel: Selection } | null;
+
   // Actions
   newProject: (name: string) => void;
   loadProject: (project: Project) => void;
@@ -93,6 +100,12 @@ export interface StoreState {
 
   // Frame selection.
   setSelectedFrameIndex: (sourceId: Id, index: number) => void;
+
+  // Marquee selection.
+  setSelection: (
+    sel: { sourceId: Id; frameIndex: number; sel: Selection } | null,
+  ) => void;
+  clearSelection: () => void;
 
   // Undo/redo. `beginStroke` returns a closure that, when called,
   // computes a delta from the snapshot+current frame and pushes it
@@ -153,6 +166,7 @@ export const useStore = create<StoreState>((set) => ({
   selectedFrameIndex: {},
   undoStacks: {},
   redoStacks: {},
+  selection: null,
 
   newProject: (name) =>
     set({
@@ -164,6 +178,7 @@ export const useStore = create<StoreState>((set) => ({
       selectedFrameIndex: {},
       undoStacks: {},
       redoStacks: {},
+      selection: null,
     }),
 
   loadProject: (project) => {
@@ -199,6 +214,7 @@ export const useStore = create<StoreState>((set) => ({
       selectedFrameIndex: {},
       undoStacks: {},
       redoStacks: {},
+      selection: null,
     });
   },
 
@@ -282,6 +298,7 @@ export const useStore = create<StoreState>((set) => ({
         undoStacks: restUndo,
         redoStacks: restRedo,
         selectedSourceId: s.selectedSourceId === id ? null : s.selectedSourceId,
+        selection: s.selection?.sourceId === id ? null : s.selection,
       };
     }),
 
@@ -492,9 +509,18 @@ export const useStore = create<StoreState>((set) => ({
     }),
 
   setSelectedFrameIndex: (sourceId, index) =>
-    set((s) => ({
-      selectedFrameIndex: { ...s.selectedFrameIndex, [sourceId]: index },
-    })),
+    set((s) => {
+      // Selection is per-frame, not persisted across switches.
+      const nextSelection =
+        s.selection && s.selection.sourceId === sourceId ? null : s.selection;
+      return {
+        selectedFrameIndex: { ...s.selectedFrameIndex, [sourceId]: index },
+        selection: nextSelection,
+      };
+    }),
+
+  setSelection: (sel) => set({ selection: sel }),
+  clearSelection: () => set({ selection: null }),
 
   beginStroke: (sourceId, frameIndex) => {
     // Snapshot the current pixels so commit can compute a delta.
@@ -664,5 +690,6 @@ export function resetStore(): void {
     selectedFrameIndex: {},
     undoStacks: {},
     redoStacks: {},
+    selection: null,
   });
 }
