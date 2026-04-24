@@ -391,9 +391,15 @@ function PaintOverlay({
     if (!rect) return null;
     const x = Math.floor((clientX - rect.left) / zoom);
     const y = Math.floor((clientY - rect.top) / zoom);
+    // Allow modest overshoot past the canvas edge so a drag that leaves
+    // the bitmap (very common for line/rect/ellipse tools) still paints
+    // pixels up to the boundary. Drawing primitives already clip writes
+    // that fall outside `[0, w) × [0, h)`. Cap the overshoot to keep
+    // absurd coordinates from blowing up diff/preview math.
+    const overshoot = Math.max(8, bitmap.width, bitmap.height);
     return {
-      x: Math.max(0, Math.min(bitmap.width - 1, x)),
-      y: Math.max(0, Math.min(bitmap.height - 1, y)),
+      x: Math.max(-overshoot, Math.min(bitmap.width - 1 + overshoot, x)),
+      y: Math.max(-overshoot, Math.min(bitmap.height - 1 + overshoot, y)),
     };
   }
 
@@ -470,11 +476,15 @@ function PaintOverlay({
       ctx.strokeStyle = '#6ba7ff';
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 2]);
+      // Use the full rect extent (w, h) rather than (w-1, h-1) so 1x1
+      // marquees don't collapse to an invisible 0x0. Screen-resolution
+      // overlay rendering (to keep the dashed line 1 device-px thick
+      // at high zoom) is a deferred follow-up.
       ctx.strokeRect(
         marqueeRect.x + 0.5,
         marqueeRect.y + 0.5,
-        marqueeRect.w - 1,
-        marqueeRect.h - 1,
+        marqueeRect.w,
+        marqueeRect.h,
       );
       ctx.restore();
     }
@@ -485,7 +495,7 @@ function PaintOverlay({
       ctx.save();
       ctx.strokeStyle = '#60d394';
       ctx.lineWidth = 1;
-      ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w, r.h);
       ctx.restore();
     }
   }
@@ -721,6 +731,13 @@ function PaintOverlay({
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      // If the component tears down mid-drag (source switched, source
+      // deleted, project replaced), commit whatever pixels the drag
+      // has already written so undo can recover them and editedFrames
+      // stays consistent with the live bitmap.
+      const d = dragRef.current;
+      if (d && 'commit' in d) d.commit();
+      dragRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, bitmap, brushSize, primary, opacity, slicing, selection]);
