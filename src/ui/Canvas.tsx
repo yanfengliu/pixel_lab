@@ -376,6 +376,22 @@ function PaintOverlay({
   const previewDataRef = useRef<ImageData | null>(null);
   const lastShapeBboxRef = useRef<Rect | null>(null);
 
+  // Brush params are read on every mousedown/move/up, but we don't want
+  // them in the paint-overlay effect deps — a mid-drag color or brush-size
+  // change would tear down the listener and trigger the abandoned-drag
+  // cleanup, which (for move-tool) committed a cut-only delta and
+  // silently lost the lifted pixels (R2-B2). Refs keep the values live
+  // without re-running the effect; they are synced on every render via
+  // the small effect below.
+  const primaryRef = useRef(primary);
+  const opacityRef = useRef(opacity);
+  const brushSizeRef = useRef(brushSize);
+  useEffect(() => {
+    primaryRef.current = primary;
+    opacityRef.current = opacity;
+    brushSizeRef.current = brushSize;
+  }, [primary, opacity, brushSize]);
+
   // Re-render preview whenever selection, tool state, or brush params
   // change even if no drag is active. Without primary/brushSize/opacity
   // in deps, mid-drag color or size tweaks wouldn't refresh the shape
@@ -712,7 +728,7 @@ function PaintOverlay({
           if (d.tool === 'pencil') {
             stampLine(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
           } else {
-            stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSize);
+            stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSizeRef.current);
           }
           d.lastX = p.x;
           d.lastY = p.y;
@@ -754,7 +770,11 @@ function PaintOverlay({
           case 'shape': {
             const effective = applyShiftModifier(d.tool, ev.shiftKey);
             const commit = beginStroke(source.id, frameIndex);
-            const brush: Brush = { size: brushSize, color: primary, opacity };
+            const brush: Brush = {
+              size: brushSizeRef.current,
+              color: primaryRef.current,
+              opacity: opacityRef.current,
+            };
             renderShape(effective, bitmap, d.x0, d.y0, d.x1, d.y1, brush);
             onRepaintCanvas();
             commit();
@@ -801,23 +821,41 @@ function PaintOverlay({
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      // If the component tears down mid-drag (source switched, source
-      // deleted, project replaced), commit whatever pixels the drag
-      // has already written so undo can recover them and editedFrames
-      // stays consistent with the live bitmap.
+      // Abandoned-drag cleanup. Any effect-dep change (tool switch,
+      // selection change, bitmap switch, etc.) or unmount teardown runs
+      // this path. Discriminate on drag kind:
+      //   - move: pre-lift pixels are held in `d.pixels`. Paste them back
+      //     at the original rect to revert, and DO NOT commit — the
+      //     delta would otherwise encode a "cut-only" state (R2-B2).
+      //     Ctrl+Z would recover but the UX reads as data loss.
+      //   - brush: in-progress pixels are already in the bitmap; commit
+      //     so undo can recover them and editedFrames stays consistent.
+      //   - shape/marquee/slice: no bitmap writes yet — just discard.
       //
       // Additionally, clear the preview so any active shape/marquee/slice
-      // ghost disappears alongside the drag teardown (R2-I12). The
-      // `activeTool` dep on the drawPreview effect above is the primary
-      // mechanism; this clearPreview is a belt-and-suspenders safeguard
-      // for cleanup paths that don't go through a drawPreview re-run.
+      // ghost disappears alongside the drag teardown (R2-I12).
       const d = dragRef.current;
-      if (d && 'commit' in d) d.commit();
+      if (d) {
+        if (d.kind === 'move') {
+          // Revert the cut: paste lifted pixels back at their origin.
+          const reverted = pasteSelection(
+            bitmap,
+            d.startRect.x,
+            d.startRect.y,
+            d.pixels,
+            d.mask,
+          );
+          bitmap.data.set(reverted.data);
+          onRepaintCanvas();
+        } else if ('commit' in d) {
+          d.commit();
+        }
+      }
       dragRef.current = null;
       clearPreview();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool, bitmap, brushSize, primary, opacity, slicing, selection]);
+  }, [activeTool, bitmap, slicing, selection]);
 
   // ESC (clear selection) is owned by the ToolPalette's global keymap so
   // the complete shortcut table lives in one place. No Canvas-local ESC
