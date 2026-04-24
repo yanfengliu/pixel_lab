@@ -33,7 +33,7 @@ export { slice, sliceGrid, sliceAuto, sliceManual } from './slicers';
 
 export { prepareSheet, prepareSequence } from './source';
 
-export type { Brush } from './drawing';
+export type { Brush, StrokeDelta } from './drawing';
 export {
   stampDot,
   stampLine,
@@ -41,6 +41,9 @@ export {
   stampEraseLine,
   floodFill,
   samplePixel,
+  computeDelta,
+  redoDelta,
+  undoDelta,
 } from './drawing';
 
 export type { DecodedGifFrame, GifFramePatch } from './gif';

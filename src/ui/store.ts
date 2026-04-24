@@ -7,26 +7,56 @@ import type {
   Project,
   Slicing,
   Source,
+  Tool,
 } from '../core/types';
 import { newId } from '../core/ids';
 import { prepareSheet, prepareSequence } from '../core/source';
 import { decodePng } from '../core/png';
 import { decodeGif } from '../core/gif';
-import type { RawImage } from '../core/image';
+import { createImage, type RawImage, type RGBA } from '../core/image';
+import {
+  computeDelta,
+  redoDelta,
+  undoDelta,
+  type StrokeDelta,
+} from '../core/drawing';
 import type { DecodedImport } from '../io/file';
+
+export interface CreateBlankSourceArgs {
+  kind: 'sheet' | 'sequence';
+  name: string;
+  width: number;
+  height: number;
+  /** Sequence-only. Defaults to 1. */
+  frameCount?: number;
+}
 
 export interface StoreState {
   project: Project;
   prepared: Record<Id, PreparedSource>;
   /**
    * Sheet-only: decoded full-size bitmap kept in memory so that changing
-   * slicing re-crops without re-decoding the PNG bytes. GIF sources keep
-   * their decoded per-frame bitmaps inside `prepared[id].frames` and don't
-   * need an entry here.
+   * slicing re-crops without re-decoding the PNG bytes. Sequence sources
+   * keep their decoded per-frame bitmaps inside `prepared[id].frames`
+   * and don't need an entry here.
    */
   sheetBitmaps: Record<Id, RawImage>;
   selectedSourceId: Id | null;
   selectedAnimationId: Id | null;
+
+  // Drawing state.
+  activeTool: Tool;
+  primaryColor: RGBA;
+  secondaryColor: RGBA;
+  /** 0..1, applied to drawing tools when blending. */
+  opacity: number;
+  /** 1..8, square brush side length. */
+  brushSize: number;
+  /** Per-source: which frame is being edited / previewed. */
+  selectedFrameIndex: Record<Id, number>;
+  /** Per-source undo/redo stacks. Session-only; not serialized. */
+  undoStacks: Record<Id, StrokeDelta[]>;
+  redoStacks: Record<Id, StrokeDelta[]>;
 
   // Actions
   newProject: (name: string) => void;
@@ -35,6 +65,7 @@ export interface StoreState {
   removeSource: (id: Id) => void;
   updateSlicing: (id: Id, slicing: Slicing) => void;
   selectSource: (id: Id | null) => void;
+  createBlankSource: (args: CreateBlankSourceArgs) => Source;
 
   addAnimation: (name: string) => Animation;
   removeAnimation: (id: Id) => void;
@@ -48,11 +79,36 @@ export interface StoreState {
   appendFrames: (animationId: Id, refs: FrameRef[]) => void;
   removeFrameAt: (animationId: Id, index: number) => void;
   reorderFrame: (animationId: Id, from: number, to: number) => void;
+
+  // Tools / colors.
+  setActiveTool: (tool: Tool) => void;
+  setPrimaryColor: (c: RGBA) => void;
+  setSecondaryColor: (c: RGBA) => void;
+  swapColors: () => void;
+  setOpacity: (n: number) => void;
+  setBrushSize: (n: number) => void;
+  addSwatch: (hex: string) => void;
+  removeSwatch: (hex: string) => void;
+  moveSwatch: (from: number, to: number) => void;
+
+  // Frame selection.
+  setSelectedFrameIndex: (sourceId: Id, index: number) => void;
+
+  // Undo/redo. `beginStroke` returns a closure that, when called,
+  // computes a delta from the snapshot+current frame and pushes it
+  // into the undo stack (clearing redo). Caller is expected to mutate
+  // the prepared frame's pixels between begin and commit.
+  beginStroke: (sourceId: Id, frameIndex: number) => () => void;
+  undo: (sourceId: Id) => void;
+  redo: (sourceId: Id) => void;
 }
 
 function emptyProject(name: string): Project {
   return { version: 2, name, sources: [], animations: [] };
 }
+
+const DEFAULT_PRIMARY: RGBA = { r: 0, g: 0, b: 0, a: 255 };
+const DEFAULT_SECONDARY: RGBA = { r: 255, g: 255, b: 255, a: 255 };
 
 /**
  * Keep animation names unique across a project. Manifest.json keys
@@ -70,12 +126,33 @@ function ensureUniqueName(name: string, taken: ReadonlyArray<string>): string {
   throw new Error('ensureUniqueName: ran out of disambiguating suffixes');
 }
 
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+function clampBrushSize(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  const i = Math.floor(n);
+  return i < 1 ? 1 : i > 8 ? 8 : i;
+}
+function normalizeHex(hex: string): string {
+  return hex.toLowerCase();
+}
+
 export const useStore = create<StoreState>((set) => ({
   project: emptyProject('untitled'),
   prepared: {},
   sheetBitmaps: {},
   selectedSourceId: null,
   selectedAnimationId: null,
+  activeTool: 'pencil',
+  primaryColor: DEFAULT_PRIMARY,
+  secondaryColor: DEFAULT_SECONDARY,
+  opacity: 1,
+  brushSize: 1,
+  selectedFrameIndex: {},
+  undoStacks: {},
+  redoStacks: {},
 
   newProject: (name) =>
     set({
@@ -84,6 +161,9 @@ export const useStore = create<StoreState>((set) => ({
       sheetBitmaps: {},
       selectedSourceId: null,
       selectedAnimationId: null,
+      selectedFrameIndex: {},
+      undoStacks: {},
+      redoStacks: {},
     }),
 
   loadProject: (project) => {
@@ -116,6 +196,9 @@ export const useStore = create<StoreState>((set) => ({
       sheetBitmaps,
       selectedSourceId: null,
       selectedAnimationId: null,
+      selectedFrameIndex: {},
+      undoStacks: {},
+      redoStacks: {},
     });
   },
 
@@ -182,10 +265,22 @@ export const useStore = create<StoreState>((set) => ({
       const restBitmaps = Object.fromEntries(
         Object.entries(s.sheetBitmaps).filter(([k]) => k !== id),
       );
+      const restSelected = Object.fromEntries(
+        Object.entries(s.selectedFrameIndex).filter(([k]) => k !== id),
+      );
+      const restUndo = Object.fromEntries(
+        Object.entries(s.undoStacks).filter(([k]) => k !== id),
+      );
+      const restRedo = Object.fromEntries(
+        Object.entries(s.redoStacks).filter(([k]) => k !== id),
+      );
       return {
         project: { ...s.project, sources, animations },
         prepared: restPrepared,
         sheetBitmaps: restBitmaps,
+        selectedFrameIndex: restSelected,
+        undoStacks: restUndo,
+        redoStacks: restRedo,
         selectedSourceId: s.selectedSourceId === id ? null : s.selectedSourceId,
       };
     }),
@@ -209,6 +304,51 @@ export const useStore = create<StoreState>((set) => ({
     }),
 
   selectSource: (id) => set({ selectedSourceId: id }),
+
+  createBlankSource: (args) => {
+    const id = newId();
+    const frameCount = args.kind === 'sheet' ? 1 : Math.max(1, args.frameCount ?? 1);
+    const editedFrames: RawImage[] = [];
+    for (let i = 0; i < frameCount; i++) {
+      editedFrames.push(createImage(args.width, args.height));
+    }
+    const source: Source = {
+      id,
+      name: args.name,
+      kind: args.kind,
+      width: args.width,
+      height: args.height,
+      imageBytes: new Uint8Array(),
+      importedFrom: 'blank',
+      editedFrames,
+      slicing:
+        args.kind === 'sheet'
+          ? {
+              kind: 'grid',
+              cellW: args.width,
+              cellH: args.height,
+              offsetX: 0,
+              offsetY: 0,
+              rows: 1,
+              cols: 1,
+            }
+          : { kind: 'sequence' },
+    };
+    const prepared: PreparedSource =
+      args.kind === 'sheet'
+        ? prepareSheet(source, editedFrames[0]!)
+        : prepareSequence(source, editedFrames);
+    set((s) => ({
+      project: { ...s.project, sources: [...s.project.sources, source] },
+      prepared: { ...s.prepared, [id]: prepared },
+      sheetBitmaps:
+        args.kind === 'sheet'
+          ? { ...s.sheetBitmaps, [id]: editedFrames[0]! }
+          : s.sheetBitmaps,
+      selectedSourceId: id,
+    }));
+    return source;
+  },
 
   addAnimation: (name) => {
     const state = useStore.getState();
@@ -316,7 +456,196 @@ export const useStore = create<StoreState>((set) => ({
         }),
       },
     })),
+
+  setActiveTool: (tool) => set({ activeTool: tool }),
+  setPrimaryColor: (c) => set({ primaryColor: c }),
+  setSecondaryColor: (c) => set({ secondaryColor: c }),
+  swapColors: () =>
+    set((s) => ({ primaryColor: s.secondaryColor, secondaryColor: s.primaryColor })),
+  setOpacity: (n) => set({ opacity: clamp01(n) }),
+  setBrushSize: (n) => set({ brushSize: clampBrushSize(n) }),
+
+  addSwatch: (hex) =>
+    set((s) => {
+      const norm = normalizeHex(hex);
+      const list = s.project.swatches ?? [];
+      if (list.some((x) => normalizeHex(x) === norm)) return {};
+      return { project: { ...s.project, swatches: [...list, norm] } };
+    }),
+  removeSwatch: (hex) =>
+    set((s) => {
+      const norm = normalizeHex(hex);
+      const list = (s.project.swatches ?? []).filter(
+        (x) => normalizeHex(x) !== norm,
+      );
+      return { project: { ...s.project, swatches: list } };
+    }),
+  moveSwatch: (from, to) =>
+    set((s) => {
+      const list = [...(s.project.swatches ?? [])];
+      if (from < 0 || from >= list.length) return {};
+      const [moved] = list.splice(from, 1);
+      if (!moved) return {};
+      const dest = Math.max(0, Math.min(list.length, to));
+      list.splice(dest, 0, moved);
+      return { project: { ...s.project, swatches: list } };
+    }),
+
+  setSelectedFrameIndex: (sourceId, index) =>
+    set((s) => ({
+      selectedFrameIndex: { ...s.selectedFrameIndex, [sourceId]: index },
+    })),
+
+  beginStroke: (sourceId, frameIndex) => {
+    // Snapshot the current pixels so commit can compute a delta.
+    const state = useStore.getState();
+    const source = state.project.sources.find((s) => s.id === sourceId);
+    if (!source) {
+      throw new Error(`beginStroke: unknown source ${sourceId}`);
+    }
+    const target = getEditTarget(state, source, frameIndex);
+    if (!target) {
+      throw new Error(
+        `beginStroke: frame ${frameIndex} missing for source ${sourceId}`,
+      );
+    }
+    const before: RawImage = {
+      width: target.width,
+      height: target.height,
+      data: new Uint8ClampedArray(target.data),
+    };
+    return () => {
+      const cur = useStore.getState();
+      const curSource = cur.project.sources.find((s) => s.id === sourceId);
+      if (!curSource) return;
+      const after = getEditTarget(cur, curSource, frameIndex);
+      if (!after) return;
+      const delta = computeDelta(sourceId, frameIndex, before, after);
+      if (!delta) return;
+      // Materialize editedFrames on first commit if the source had none,
+      // mirroring the spec's "first-edit materialization" rule. For
+      // sheets this is the single bitmap; for sequences it is each
+      // prepared frame.
+      const sources = cur.project.sources.map((src) => {
+        if (src.id !== sourceId) return src;
+        if (src.editedFrames && src.editedFrames.length > 0) return src;
+        const seed: RawImage[] =
+          src.kind === 'sheet'
+            ? [cloneRaw(after)]
+            : (cur.prepared[sourceId]?.frames ?? []).map(cloneRaw);
+        return { ...src, editedFrames: seed };
+      });
+      // For sheets we also need to refresh prepared.frames so the new
+      // pixels land in subsequent slicing operations / exports.
+      let prepared = cur.prepared;
+      if (curSource.kind === 'sheet') {
+        const updatedSource = sources.find((x) => x.id === sourceId)!;
+        const bitmap = cur.sheetBitmaps[sourceId];
+        if (bitmap) {
+          prepared = {
+            ...prepared,
+            [sourceId]: prepareSheet(updatedSource, bitmap),
+          };
+        }
+      }
+      const undoStack = [...(cur.undoStacks[sourceId] ?? []), delta];
+      // Any new stroke after an undo invalidates the redo stack.
+      const { [sourceId]: _drop, ...restRedo } = cur.redoStacks;
+      void _drop;
+      set({
+        project: { ...cur.project, sources },
+        prepared,
+        undoStacks: { ...cur.undoStacks, [sourceId]: undoStack },
+        redoStacks: restRedo,
+      });
+    };
+  },
+
+  undo: (sourceId) => {
+    const cur = useStore.getState();
+    const stack = cur.undoStacks[sourceId];
+    if (!stack || stack.length === 0) return;
+    const delta = stack[stack.length - 1]!;
+    const newUndo = stack.slice(0, -1);
+    const newRedo = [...(cur.redoStacks[sourceId] ?? []), delta];
+    const source = cur.project.sources.find((s) => s.id === sourceId);
+    if (!source) return;
+    const target = getEditTarget(cur, source, delta.frameIndex);
+    if (!target) return;
+    undoDelta(target, delta);
+    let prepared = cur.prepared;
+    if (source.kind === 'sheet') {
+      const bitmap = cur.sheetBitmaps[sourceId];
+      if (bitmap) {
+        prepared = { ...prepared, [sourceId]: prepareSheet(source, bitmap) };
+      }
+    } else {
+      // Replace shell to push downstream re-read.
+      const p = cur.prepared[sourceId];
+      if (p) prepared = { ...prepared, [sourceId]: { ...p } };
+    }
+    set({
+      undoStacks: { ...cur.undoStacks, [sourceId]: newUndo },
+      redoStacks: { ...cur.redoStacks, [sourceId]: newRedo },
+      prepared,
+    });
+  },
+
+  redo: (sourceId) => {
+    const cur = useStore.getState();
+    const stack = cur.redoStacks[sourceId];
+    if (!stack || stack.length === 0) return;
+    const delta = stack[stack.length - 1]!;
+    const newRedo = stack.slice(0, -1);
+    const newUndo = [...(cur.undoStacks[sourceId] ?? []), delta];
+    const source = cur.project.sources.find((s) => s.id === sourceId);
+    if (!source) return;
+    const target = getEditTarget(cur, source, delta.frameIndex);
+    if (!target) return;
+    redoDelta(target, delta);
+    let prepared = cur.prepared;
+    if (source.kind === 'sheet') {
+      const bitmap = cur.sheetBitmaps[sourceId];
+      if (bitmap) {
+        prepared = { ...prepared, [sourceId]: prepareSheet(source, bitmap) };
+      }
+    } else {
+      const p = cur.prepared[sourceId];
+      if (p) prepared = { ...prepared, [sourceId]: { ...p } };
+    }
+    set({
+      undoStacks: { ...cur.undoStacks, [sourceId]: newUndo },
+      redoStacks: { ...cur.redoStacks, [sourceId]: newRedo },
+      prepared,
+    });
+  },
 }));
+
+/**
+ * The canonical paint target for a (source, frameIndex). Sheets paint
+ * on the cached `sheetBitmap` (which is shared with `editedFrames[0]`
+ * after first commit), so painting outside the current grid cells still
+ * lands in pixels that subsequent slicing will pick up. Sequences paint
+ * directly on the per-frame prepared bitmap.
+ */
+function getEditTarget(
+  state: StoreState,
+  source: Source,
+  frameIndex: number,
+): RawImage | undefined {
+  if (source.kind === 'sheet') {
+    return state.sheetBitmaps[source.id];
+  }
+  return state.prepared[source.id]?.frames[frameIndex];
+}
+
+function cloneRaw(img: RawImage): RawImage {
+  return {
+    width: img.width,
+    height: img.height,
+    data: new Uint8ClampedArray(img.data),
+  };
+}
 
 export const getStore = useStore;
 // For tests: reset to initial.
@@ -327,5 +656,13 @@ export function resetStore(): void {
     sheetBitmaps: {},
     selectedSourceId: null,
     selectedAnimationId: null,
+    activeTool: 'pencil',
+    primaryColor: DEFAULT_PRIMARY,
+    secondaryColor: DEFAULT_SECONDARY,
+    opacity: 1,
+    brushSize: 1,
+    selectedFrameIndex: {},
+    undoStacks: {},
+    redoStacks: {},
   });
 }
