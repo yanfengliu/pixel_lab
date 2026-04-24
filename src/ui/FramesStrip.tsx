@@ -21,6 +21,11 @@ export function FramesStrip() {
   const setSelectedFrameIndex = useStore((s) => s.setSelectedFrameIndex);
   const onionSkin = useStore((s) => s.onionSkin);
   const setOnionSkin = useStore((s) => s.setOnionSkin);
+  // Track delta-apply events on the selected source so thumbnails refresh
+  // when pixels change in place (same root cause as I2).
+  const renderCounter = useStore((s) =>
+    selectedSourceId ? (s.renderCounters[selectedSourceId] ?? 0) : 0,
+  );
 
   const source: Source | undefined = useMemo(
     () =>
@@ -62,6 +67,7 @@ export function FramesStrip() {
           key={i}
           index={i}
           img={img}
+          dirty={renderCounter}
           active={i === activeIdx}
           onClick={() => source && setSelectedFrameIndex(source.id, i)}
         />
@@ -73,18 +79,22 @@ export function FramesStrip() {
 function FrameThumb({
   index,
   img,
+  dirty,
   active,
   onClick,
 }: {
   index: number;
   img: RawImage;
+  /** Source-level render counter — bumps on every in-place paint. */
+  dirty: number;
   active: boolean;
   onClick: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (ref.current) drawImageToCanvas(ref.current, img);
-  }, [img]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [img, dirty]);
   return (
     <button
       role="listitem"

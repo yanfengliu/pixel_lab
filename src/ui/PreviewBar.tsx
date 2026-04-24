@@ -10,21 +10,37 @@ export function PreviewBar() {
   const prepared = useStore((s) => s.prepared);
   const selectedAnimId = useStore((s) => s.selectedAnimationId);
   const removeFrame = useStore((s) => s.removeFrameAt);
+  // PreviewBar watches every source's render counter so a paint on the
+  // active-source's frames refreshes the preview frames (thumbnails
+  // and the play-box canvas). `renderCounters` is session-only.
+  const renderCounters = useStore((s) => s.renderCounters);
 
   const animation = useMemo<Animation | undefined>(
     () => project.animations.find((a) => a.id === selectedAnimId),
     [project.animations, selectedAnimId],
   );
 
+  // Aggregate a single dirty value from every source this animation
+  // references; a bump on any of them re-renders the strip.
+  const dirty = useMemo(() => {
+    if (!animation) return 0;
+    let sum = 0;
+    for (const ref of animation.frames) {
+      sum += renderCounters[ref.sourceId] ?? 0;
+    }
+    return sum;
+  }, [animation, renderCounters]);
+
   return (
     <div className="preview">
-      <PlayBox animation={animation} prepared={prepared} />
+      <PlayBox animation={animation} prepared={prepared} dirty={dirty} />
       <div className="strip">
         {animation?.frames.map((ref, i) => (
           <Thumb
             key={i}
             index={i}
             src={getFrameImage(prepared, ref.sourceId, ref.rectIndex)}
+            dirty={renderCounters[ref.sourceId] ?? 0}
             onDelete={() => removeFrame(animation.id, i)}
           />
         ))}
@@ -39,9 +55,12 @@ export function PreviewBar() {
 function PlayBox({
   animation,
   prepared,
+  dirty,
 }: {
   animation: Animation | undefined;
   prepared: ReturnType<typeof useStore.getState>['prepared'];
+  /** Summed render counter of every referenced source. */
+  dirty: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -62,7 +81,9 @@ function PlayBox({
     if (canvasRef.current && img) {
       drawImageToCanvas(canvasRef.current, img);
     }
-  }, [frames, frameIdx]);
+    // dirty bumps on in-place pixel mutations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frames, frameIdx, dirty]);
 
   return (
     <>
@@ -98,16 +119,20 @@ function PlayBox({
 function Thumb({
   index,
   src,
+  dirty,
   onDelete,
 }: {
   index: number;
   src: RawImage | undefined;
+  /** Source-level render counter — bumps on every in-place paint. */
+  dirty: number;
   onDelete: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (canvasRef.current && src) drawImageToCanvas(canvasRef.current, src);
-  }, [src]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, dirty]);
   return (
     <div
       className="thumb"

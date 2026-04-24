@@ -58,6 +58,14 @@ export interface StoreState {
   /** Per-source undo/redo stacks. Session-only; not serialized. */
   undoStacks: Record<Id, StrokeDelta[]>;
   redoStacks: Record<Id, StrokeDelta[]>;
+  /**
+   * Per-source monotonic counter bumped on every in-place pixel mutation
+   * that doesn't change a RawImage reference (stroke commits, undo,
+   * redo). React effects that render these bitmaps to DOM canvases key
+   * on this counter so they refresh even when the RawImage identity
+   * didn't change. Session-only; not serialized.
+   */
+  renderCounters: Record<Id, number>;
 
   /**
    * Current marquee selection, if any. Selection is per-frame, not
@@ -177,6 +185,7 @@ export const useStore = create<StoreState>((set) => ({
   selectedFrameIndex: {},
   undoStacks: {},
   redoStacks: {},
+  renderCounters: {},
   selection: null,
   onionSkin: false,
 
@@ -190,6 +199,7 @@ export const useStore = create<StoreState>((set) => ({
       selectedFrameIndex: {},
       undoStacks: {},
       redoStacks: {},
+      renderCounters: {},
       selection: null,
     }),
 
@@ -226,6 +236,7 @@ export const useStore = create<StoreState>((set) => ({
       selectedFrameIndex: {},
       undoStacks: {},
       redoStacks: {},
+      renderCounters: {},
       selection: null,
     });
   },
@@ -302,6 +313,9 @@ export const useStore = create<StoreState>((set) => ({
       const restRedo = Object.fromEntries(
         Object.entries(s.redoStacks).filter(([k]) => k !== id),
       );
+      const restCounters = Object.fromEntries(
+        Object.entries(s.renderCounters).filter(([k]) => k !== id),
+      );
       return {
         project: { ...s.project, sources, animations },
         prepared: restPrepared,
@@ -309,6 +323,7 @@ export const useStore = create<StoreState>((set) => ({
         selectedFrameIndex: restSelected,
         undoStacks: restUndo,
         redoStacks: restRedo,
+        renderCounters: restCounters,
         selectedSourceId: s.selectedSourceId === id ? null : s.selectedSourceId,
         selection: s.selection?.sourceId === id ? null : s.selection,
       };
@@ -602,6 +617,7 @@ export const useStore = create<StoreState>((set) => ({
         prepared,
         undoStacks: { ...cur.undoStacks, [sourceId]: undoStack },
         redoStacks: restRedo,
+        renderCounters: bumpCounter(cur.renderCounters, sourceId),
       });
     };
   },
@@ -647,6 +663,7 @@ export const useStore = create<StoreState>((set) => ({
       undoStacks: { ...cur.undoStacks, [sourceId]: newUndo },
       redoStacks: { ...cur.redoStacks, [sourceId]: newRedo },
       prepared,
+      renderCounters: bumpCounter(cur.renderCounters, sourceId),
     });
   },
 
@@ -688,9 +705,17 @@ export const useStore = create<StoreState>((set) => ({
       undoStacks: { ...cur.undoStacks, [sourceId]: newUndo },
       redoStacks: { ...cur.redoStacks, [sourceId]: newRedo },
       prepared,
+      renderCounters: bumpCounter(cur.renderCounters, sourceId),
     });
   },
 }));
+
+function bumpCounter(
+  counters: Record<Id, number>,
+  sourceId: Id,
+): Record<Id, number> {
+  return { ...counters, [sourceId]: (counters[sourceId] ?? 0) + 1 };
+}
 
 /**
  * The canonical paint target for a (source, frameIndex). Sheets paint
@@ -767,6 +792,7 @@ export function resetStore(): void {
     selectedFrameIndex: {},
     undoStacks: {},
     redoStacks: {},
+    renderCounters: {},
     selection: null,
     onionSkin: false,
   });

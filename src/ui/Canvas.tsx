@@ -65,6 +65,9 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
   const setSelection = useStore((s) => s.setSelection);
   const clearSelection = useStore((s) => s.clearSelection);
   const onionSkin = useStore((s) => s.onionSkin);
+  const renderCounter = useStore(
+    (s) => s.renderCounters[source.id] ?? 0,
+  );
 
   const frameIdx = selectedFrameIndex[source.id] ?? 0;
 
@@ -85,8 +88,11 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
 
   useEffect(() => {
     if (canvasRef.current) drawImageToCanvas(canvasRef.current, paintTarget);
+    // renderCounter bumps on every in-place pixel mutation (stroke
+    // commit, undo, redo) so the DOM canvas refreshes even though
+    // paintTarget.data's reference didn't change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paintTarget, paintTarget.data]);
+  }, [paintTarget, paintTarget.data, renderCounter]);
 
   const rects = useMemo<Rect[]>(() => {
     try {
@@ -116,7 +122,11 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
       }}
     >
       {onionSkinFrame ? (
-        <OnionSkinLayer img={onionSkinFrame} zoom={zoom} />
+        <OnionSkinLayer
+          img={onionSkinFrame}
+          zoom={zoom}
+          dirty={renderCounter}
+        />
       ) : null}
       <canvas
         ref={canvasRef}
@@ -211,11 +221,26 @@ function PixelGridOverlay({
  * `canvas-image` layer in paint order via DOM position + `z-index: 0`.
  * The image canvas has its own position/z-index set so it paints on top.
  */
-function OnionSkinLayer({ img, zoom }: { img: RawImage; zoom: number }) {
+function OnionSkinLayer({
+  img,
+  zoom,
+  dirty,
+}: {
+  img: RawImage;
+  zoom: number;
+  /**
+   * Source-level render counter bumped on every delta apply. Included
+   * in the effect deps so the ghost refreshes when the previous frame
+   * is edited without the `img` reference changing (same root cause as
+   * I2 on the main canvas).
+   */
+  dirty: number;
+}) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (ref.current) drawImageToCanvas(ref.current, img);
-  }, [img]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [img, dirty]);
   return (
     <canvas
       ref={ref}
