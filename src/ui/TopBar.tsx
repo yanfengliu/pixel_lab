@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useStore } from './store';
 import { openBytes, saveBytes } from '../io/persist';
 import { buildExport } from '../core/export';
 import { projectFromJson, projectToJson } from '../core/serialize/project';
 import { buildZip } from '../io/zip';
+import { NewBlankSource } from './NewBlankSource';
 
 /**
  * Normalize a project name into something safe for filesystem output.
@@ -21,6 +23,7 @@ export function TopBar() {
   const newProject = useStore((s) => s.newProject);
   const loadProject = useStore((s) => s.loadProject);
   const renameProject = useStore((s) => s.renameProject);
+  const [blankOpen, setBlankOpen] = useState(false);
 
   async function handleSave() {
     const json = projectToJson(project);
@@ -54,19 +57,23 @@ export function TopBar() {
   }
 
   return (
-    <div className="top">
-      <span className="title">pixel_lab</span>
-      <input
-        type="text"
-        value={project.name}
-        onChange={(e) => renameProject(e.target.value)}
-      />
-      <button onClick={() => newProject('untitled')}>New</button>
-      <button onClick={handleOpen}>Open</button>
-      <button onClick={handleSave}>Save</button>
-      <button className="primary" onClick={handleExport}>
-        Export
-      </button>
-    </div>
+    <>
+      <div className="top">
+        <span className="title">pixel_lab</span>
+        <input
+          type="text"
+          value={project.name}
+          onChange={(e) => renameProject(e.target.value)}
+        />
+        <button onClick={() => newProject('untitled')}>New</button>
+        <button onClick={() => setBlankOpen(true)}>+ New Blank</button>
+        <button onClick={handleOpen}>Open</button>
+        <button onClick={handleSave}>Save</button>
+        <button className="primary" onClick={handleExport}>
+          Export
+        </button>
+      </div>
+      <NewBlankSource open={blankOpen} onClose={() => setBlankOpen(false)} />
+    </>
   );
 }

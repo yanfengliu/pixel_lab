@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from './store';
 import { drawImageToCanvas } from './rendering';
+import { useAnimationPlayback } from './usePlayback';
 import type { RawImage } from '../core/image';
 import type { Animation } from '../core/types';
 
@@ -43,8 +44,6 @@ function PlayBox({
   prepared: ReturnType<typeof useStore.getState>['prepared'];
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [playing, setPlaying] = useState(true);
-  const [frameIdx, setFrameIdx] = useState(0);
 
   const frames = useMemo<RawImage[]>(() => {
     if (!animation) return [];
@@ -53,22 +52,10 @@ function PlayBox({
       .filter((f): f is RawImage => Boolean(f));
   }, [animation, prepared]);
 
-  useEffect(() => {
-    setFrameIdx(0);
-  }, [animation?.id]);
-
-  useEffect(() => {
-    if (!playing || frames.length === 0 || !animation) return;
-    const nextDelayMs = computeFrameDelay(animation, frameIdx);
-    const timer = setTimeout(() => {
-      setFrameIdx((i) => {
-        const nxt = i + 1;
-        if (nxt >= frames.length) return animation.loop ? 0 : i;
-        return nxt;
-      });
-    }, nextDelayMs);
-    return () => clearTimeout(timer);
-  }, [playing, frameIdx, frames, animation]);
+  const { playing, setPlaying, frameIdx, setFrameIdx } = useAnimationPlayback(
+    animation,
+    frames.length,
+  );
 
   useEffect(() => {
     const img = frames[frameIdx];
@@ -94,7 +81,7 @@ function PlayBox({
         )}
       </div>
       <div className="controls">
-        <button onClick={() => setPlaying((p) => !p)}>
+        <button onClick={() => setPlaying(!playing)}>
           {playing ? '⏸ pause' : '▶ play'}
         </button>
         <button onClick={() => setFrameIdx(0)}>⏮ first</button>
@@ -106,13 +93,6 @@ function PlayBox({
       </div>
     </>
   );
-
-  function computeFrameDelay(anim: Animation, i: number): number {
-    if (anim.fps === 'per-frame') {
-      return anim.frames[i]?.durationMs ?? 100;
-    }
-    return Math.max(10, Math.floor(1000 / anim.fps));
-  }
 }
 
 function Thumb({
