@@ -76,6 +76,19 @@ describe('Canvas — pencil tool', () => {
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
   });
 
+  it('canvas-image does not capture mouse events (lets clicks reach paint-overlay)', () => {
+    // Regression for the post-merge BLOCKER: the canvas-image <canvas>
+    // had position:relative + zIndex:1 but default pointer-events:auto,
+    // so real browser clicks hit the canvas (no handler) instead of the
+    // sibling paint-overlay. jsdom's fireEvent targets elements
+    // directly, bypassing z-order hit-test, so the original tests missed
+    // the bug. Assert pointer-events is 'none' on the visual canvas.
+    const { container } = mountForSheet();
+    const image = container.querySelector('canvas.canvas-image') as HTMLCanvasElement;
+    expect(image).not.toBeNull();
+    expect(image.style.pointerEvents).toBe('none');
+  });
+
   it('undo after paint reverts the pixel', () => {
     useStore.getState().setActiveTool('pencil');
     useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });

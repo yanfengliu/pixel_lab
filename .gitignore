@@ -146,3 +146,4 @@ playwright-report/
 test-results/
 bash.exe.stackdump
 code_review/
+test/smoke/screenshots/

@@ -39,9 +39,10 @@ mergeable in round 3.
 
 ## Known follow-ups
 
-- In-browser smoke test of `npm run dev` — blocked by sandbox port.
-- Canvas visual pixel-diff harness (jsdom has no 2D context — needs
-  Playwright or the optional `canvas` npm package).
+- Playwright smoke at `test/smoke/drawing-smoke.mjs` (manual run via
+  `npm run smoke` while `npm run dev` is up). CI wiring is a follow-up.
+- Canvas visual pixel-diff harness (jsdom has no 2D context — Playwright
+  covers the end-to-end flow; pixel-diff still pending).
 - HSV color picker (shipped hex + swatches for v2).
 - **Deferred round-1 NITs:** N2 (migrate-kind validation), N11
   (`computeDelta` O(w·h) on very large canvases), N12 (ToolPalette

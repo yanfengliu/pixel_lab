@@ -138,6 +138,12 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
           height: paintTarget.height * zoom,
           position: 'relative',
           zIndex: 1,
+          // Visual layer only. Without this, the browser hit-tests the
+          // canvas (topmost at z=1 with default pointer-events: auto) and
+          // routes clicks there instead of bubbling to the sibling
+          // paint-overlay div where the tool handlers live. jsdom tests
+          // fire events directly on the overlay, so they missed this.
+          pointerEvents: 'none',
         }}
       />
       {zoom >= 8 ? (

@@ -13,6 +13,11 @@ Pointer: devlog entry, file, or test that illustrates it.
 
 ---
 
+## jsdom + fireEvent bypasses z-order, so visual layout bugs look green — 2026-04-24
+Context: `canvas.canvas-image` was rendered with `position: relative; z-index: 1` and default `pointer-events: auto`. In a real browser it was the topmost hit target over the sibling `.paint-overlay` div, so all mouse events were absorbed by the (handler-less) canvas and no drawing happened. 266 unit tests passed because `fireEvent.mouseDown(overlay, ...)` dispatches directly on the overlay element — no hit test, no z-order — so the test harness couldn't see the bug. Caught by the first real-browser Playwright smoke test, after the branch was already merged.
+Lesson: unit tests that synthesize DOM events against a specific element are blind to z-order / pointer-events / CSS stacking bugs. If a feature depends on clicks reaching a particular layer, add a Playwright (or equivalent) smoke test that lets the browser do hit testing, OR add a unit test that asserts the pointer-events / z-index invariants directly. And: any `<canvas>` or other element that is purely visual must carry `pointer-events: none`, not rely on default `auto`.
+Pointer: `src/ui/Canvas.tsx` (`canvas.canvas-image` style), `test/ui/Canvas.test.tsx` (new `canvas-image does not capture mouse events` regression), `test/smoke/drawing-smoke.mjs`.
+
 ## Serialized state must be refreshed on every mutation, not just the first — 2026-04-24
 Context: `Source.editedFrames` was the only serialized per-source pixel buffer, but the store only materialized it on the first stroke and then silently diverged from the live `sheetBitmaps[id]` / `prepared.frames[i]` on every subsequent paint. Save/reload dropped strokes 2..N; sheet exports showed stale pixels on any re-slice.
 Lesson: if a buffer is both "the authoritative serialization source" and "the thing the user edits through a different handle," keep them in sync on every commit — don't rely on first-edit materialization plus implicit aliasing. Explicit `syncEditedFrames(target)` on stroke commit, undo, and redo removes the whole class of bug and is trivial to test.
