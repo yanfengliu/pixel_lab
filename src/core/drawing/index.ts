@@ -16,3 +16,5 @@ export {
   drawEllipseOutline,
   drawEllipseFilled,
 } from './shapes';
+export type { Selection } from './selection';
+export { extractSelection, pasteSelection } from './selection';
