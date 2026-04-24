@@ -23,7 +23,7 @@
 - **Software engineer**:
   - Responsibility: Handle all the code writing.
   - Reach out to the team if you have questions or need a second opinion. 
-  - Iterate with the code reviewer. Reviews might take a long time. Be patient.
+  - CRITICAL: After you are done coding, ask the code reviewer to review your code. Iterate with the code reviewer. Reviews might take a long time. Be patient.
   - After addressing review comments, ask the reviewer to verify that you have successfully done so.
   - If the Software Engineer and the Code Reviewer cannot reach consensus after 3 iterations, escalate to the Tie-Breaker agent.
   - Write down the reviewer feedback from previous round(s) under `code_review/` as temp files. The reviewer should consider this info + `docs/learning/lessons.md` + your diff. After you summarize reviewer feedback into devlog, delete the temp files.
