@@ -54,10 +54,11 @@ describe('round-trip: import -> slice -> animate -> export -> zip', () => {
     const zip = buildZip(bundle.files);
     const entries = parseZip(zip);
 
-    // Manifest survives round-trip and lists both frames.
+    // Manifest survives round-trip and lists both frames (v2: per-frame durationMs).
     const manifestJson = new TextDecoder().decode(entries['manifest.json']!);
     const manifest = JSON.parse(manifestJson);
-    expect(manifest.animations.walk.frames).toEqual(['walk_0', 'walk_1']);
+    expect(manifest.version).toBe(2);
+    expect(manifest.animations.walk.frames.map((f: { name: string }) => f.name)).toEqual(['walk_0', 'walk_1']);
     expect(Object.keys(manifest.frames).sort()).toEqual(['walk_0', 'walk_1']);
     expect(manifest.atlas.width).toBeGreaterThan(0);
 
