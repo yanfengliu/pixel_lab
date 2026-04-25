@@ -100,3 +100,12 @@
 - When debugging, use `docs/debugging/template.md` to record your process. Create a new file per debugging session and use it to iterate until you solve the problem.
 - If a future session makes you realize that your previous debug sessions on the same topic did not fully solve the problem, update past docs to avoid misunderstandings.
 - Clean up the temporary files (such as stack dump, test results) created during debugging after you are done.
+
+## Versioning
+
+- Maintain a version number `a.b.c`
+  - Only bump `a` when I tell you.
+  - Whenever you introduce a breaking change, bump `b` and reset `c`.
+  - Whenever you introduce a non-breaking change, bump `c`.
+- Keep everything in `docs/` up to date when you introduce changes.
+- Maintain an external-facing `docs/changelog.md` that tracks changes between every two versions. Check `docs/devlogs` for more info.
