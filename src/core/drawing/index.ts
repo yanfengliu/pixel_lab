@@ -2,6 +2,7 @@ export type { Brush } from './brush';
 export {
   stampDot,
   stampLine,
+  stampLineFrom,
   stampErase,
   stampEraseLine,
 } from './brush';

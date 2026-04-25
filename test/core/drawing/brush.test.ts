@@ -3,6 +3,7 @@ import { createImage, setPixel, getAlpha } from '../../../src/core/image';
 import {
   stampDot,
   stampLine,
+  stampLineFrom,
   stampErase,
   stampEraseLine,
   type Brush,
@@ -108,6 +109,46 @@ describe('stampLine', () => {
     const brush: Brush = { size: 1, color: RED, opacity: 1 };
     stampLine(img, 2, 2, 2, 2, brush);
     expect(getAlpha(img, 2, 2)).toBe(255);
+  });
+});
+
+describe('stampLineFrom (M7: chained-segment opacity)', () => {
+  it('skips the start pixel so chained segments do not double-composite the join', () => {
+    // Simulate a mouse-drag over two segments. The drag's first pixel was
+    // stamped by stampDot (mousedown). Each subsequent stampLineFrom call
+    // walks (lastX, lastY) → (curX, curY) excluding the start, so the join
+    // pixel composites exactly once across the whole drag.
+    const img = createImage(16, 4);
+    const brush: Brush = { size: 1, color: RED, opacity: 0.5 };
+    // Mousedown at (0,0): stampDot composites the click pixel once.
+    stampDot(img, 0, 0, brush);
+    // Mousemove segment 1: (0,0) -> (5,0). Excludes (0,0).
+    stampLineFrom(img, 0, 0, 5, 0, brush);
+    // Mousemove segment 2: (5,0) -> (10,0). Excludes (5,0) — without that
+    // skip, (5,0) would composite twice and look darker than its neighbors.
+    stampLineFrom(img, 5, 0, 10, 0, brush);
+    const a4 = getAlpha(img, 4, 0);
+    const a5 = getAlpha(img, 5, 0);
+    const a6 = getAlpha(img, 6, 0);
+    expect(a5).toBe(a4);
+    expect(a5).toBe(a6);
+  });
+
+  it('start-skip still produces a continuous line (no gap)', () => {
+    const img = createImage(8, 4);
+    const brush: Brush = { size: 1, color: RED, opacity: 1 };
+    stampDot(img, 0, 0, brush);
+    stampLineFrom(img, 0, 0, 5, 0, brush);
+    for (let x = 0; x <= 5; x++) {
+      expect(getAlpha(img, x, 0)).toBe(255);
+    }
+  });
+
+  it('zero-length stampLineFrom is a no-op (start is excluded)', () => {
+    const img = createImage(4, 4);
+    const brush: Brush = { size: 1, color: RED, opacity: 1 };
+    stampLineFrom(img, 1, 1, 1, 1, brush);
+    expect(getAlpha(img, 1, 1)).toBe(0);
   });
 });
 

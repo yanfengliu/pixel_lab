@@ -59,6 +59,27 @@ export function stampLine(
 }
 
 /**
+ * Variant of `stampLine` that excludes the start pixel. Use this for
+ * chained drag segments: the start pixel of each segment is the end pixel
+ * of the previous segment (or the mousedown stamp), and re-painting it
+ * compounds opacity at the joins (visibly darker dots on opacity<1
+ * strokes — M7).
+ *
+ * For zero-length input the call is a no-op (the start is excluded by
+ * definition).
+ */
+export function stampLineFrom(
+  dst: RawImage,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  brush: Brush,
+): void {
+  walkLine(x0, y0, x1, y1, (x, y) => stampDot(dst, x, y, brush), false);
+}
+
+/**
  * Eraser: clears a square region centered on (cx, cy) to fully
  * transparent black. Ignores opacity.
  */
@@ -134,8 +155,13 @@ function compositePixel(
 }
 
 /**
- * Bresenham line walk. Calls `onPoint` once per integer pixel including
- * both endpoints. Zero-length lines invoke once.
+ * Bresenham line walk. Calls `onPoint` once per integer pixel along the
+ * segment. `includeStart` defaults to true (both endpoints visited). When
+ * false, the (x0, y0) pixel is skipped — used by `stampLineFrom` for
+ * chained drag segments so the join pixel doesn't composite twice (M7).
+ *
+ * Zero-length lines invoke once when `includeStart` is true; zero times
+ * when it's false (the only pixel IS the start).
  */
 function walkLine(
   x0: number,
@@ -143,6 +169,7 @@ function walkLine(
   x1: number,
   y1: number,
   onPoint: (x: number, y: number) => void,
+  includeStart = true,
 ): void {
   let x = x0;
   let y = y0;
@@ -151,8 +178,10 @@ function walkLine(
   const sx = x0 < x1 ? 1 : -1;
   const sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
+  let first = true;
   while (true) {
-    onPoint(x, y);
+    if (!first || includeStart) onPoint(x, y);
+    first = false;
     if (x === x1 && y === y1) break;
     const e2 = err * 2;
     if (e2 > -dy) {
