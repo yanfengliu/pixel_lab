@@ -81,6 +81,14 @@ export interface StoreState {
    */
   onionSkin: boolean;
 
+  /**
+   * True while the Canvas has an active drag (pencil/eraser/shape/marquee/
+   * move/slice). undo/redo block on this so a mid-drag Ctrl+Z can't mutate
+   * pixels under the in-flight stroke and corrupt the delta the commit
+   * closure is about to record (M8). Session-only; not serialized.
+   */
+  isDragging: boolean;
+
   // Actions
   newProject: (name: string) => void;
   loadProject: (project: Project) => void;
@@ -125,6 +133,9 @@ export interface StoreState {
 
   // Onion skin.
   setOnionSkin: (b: boolean) => void;
+
+  // Drag lifecycle (set by Canvas around active gestures).
+  setDragging: (b: boolean) => void;
 
   // Undo/redo. `beginStroke` returns a closure that, when called,
   // computes a delta from the snapshot+current frame and pushes it
@@ -171,6 +182,20 @@ function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return n < 0 ? 0 : n > 1 ? 1 : n;
 }
+/**
+ * Coerce arbitrary FPS input from the UI (or a tampered project file) into
+ * a value the playback driver and manifest exporter can both handle. Any
+ * non-finite or non-positive numeric collapses to 12 (the default new-anim
+ * FPS). Sane numerics are clamped to [1, 240]. The 'per-frame' string
+ * sentinel passes through unchanged. Without this guard, fps=0 produces
+ * Math.round(1000/0)=Infinity in `manifest.ts`, which JSON-stringifies as
+ * `null` and silently corrupts every consumer's timing data.
+ */
+function validateFps(fps: number | 'per-frame'): number | 'per-frame' {
+  if (fps === 'per-frame') return fps;
+  if (!Number.isFinite(fps) || fps <= 0) return 12;
+  return Math.min(240, Math.max(1, Math.round(fps)));
+}
 function clampBrushSize(n: number): number {
   if (!Number.isFinite(n)) return 1;
   const i = Math.floor(n);
@@ -197,6 +222,7 @@ export const useStore = create<StoreState>((set) => ({
   renderCounters: {},
   selection: null,
   onionSkin: false,
+  isDragging: false,
 
   newProject: (name) =>
     set({
@@ -345,15 +371,41 @@ export const useStore = create<StoreState>((set) => ({
       );
       const source = sources.find((x) => x.id === id)!;
       const prepared = { ...s.prepared };
+      let preparedSucceeded = true;
       if (source.kind === 'sheet') {
         const bitmap = s.sheetBitmaps[id];
         if (!bitmap) {
           throw new Error(`updateSlicing: no decoded bitmap cached for ${id}`);
         }
-        prepared[id] = prepareSheet(source, bitmap);
+        // prepareSheet calls slice() + crop() and either may throw if the
+        // user's in-progress slicing config is invalid (cellW=0, OOB manual
+        // rects, etc.). Don't propagate: update source.slicing so the user
+        // can keep iterating, and let Canvas's useMemo surface the slicing
+        // error through the banner. Without this catch, a single bad keystroke
+        // would crash the SlicerControls input flow (M11).
+        try {
+          prepared[id] = prepareSheet(source, bitmap);
+        } catch {
+          preparedSucceeded = false;
+        }
       }
       // Sequence slicing is fixed to {kind:'sequence'} — no rebuild needed.
-      return { project: { ...s.project, sources }, prepared };
+      // KAD-004 promises re-slicing updates every animation referencing this
+      // source. Drop FrameRefs whose rectIndex is now out of range — without
+      // this they flow into buildExport and throw `no frame N in source X`.
+      // Only reconcile when prepareSheet succeeded; otherwise the old
+      // prepared.frames length is the right reference for "still valid".
+      const newCount = preparedSucceeded ? prepared[id]?.frames.length ?? 0 : null;
+      const animations =
+        newCount === null
+          ? s.project.animations
+          : s.project.animations.map((a) => ({
+              ...a,
+              frames: a.frames.filter(
+                (f) => f.sourceId !== id || f.rectIndex < newCount,
+              ),
+            }));
+      return { project: { ...s.project, sources, animations }, prepared };
     }),
 
   selectSource: (id) => set({ selectedSourceId: id }),
@@ -457,7 +509,7 @@ export const useStore = create<StoreState>((set) => ({
       project: {
         ...s.project,
         animations: s.project.animations.map((a) =>
-          a.id === id ? { ...a, fps } : a,
+          a.id === id ? { ...a, fps: validateFps(fps) } : a,
         ),
       },
     })),
@@ -566,6 +618,8 @@ export const useStore = create<StoreState>((set) => ({
 
   setOnionSkin: (b) => set({ onionSkin: b }),
 
+  setDragging: (b) => set({ isDragging: b }),
+
   beginStroke: (sourceId, frameIndex) => {
     // Snapshot the current pixels so commit can compute a delta.
     const state = useStore.getState();
@@ -637,6 +691,10 @@ export const useStore = create<StoreState>((set) => ({
 
   undo: (sourceId) => {
     const cur = useStore.getState();
+    // Mid-drag undo would mutate the paint target underneath the in-flight
+    // stroke and corrupt the delta the commit closure is about to record
+    // (M8). Bail; the user can undo after releasing the pointer.
+    if (cur.isDragging) return;
     const stack = cur.undoStacks[sourceId];
     if (!stack || stack.length === 0) return;
     const delta = stack[stack.length - 1]!;
@@ -685,6 +743,9 @@ export const useStore = create<StoreState>((set) => ({
 
   redo: (sourceId) => {
     const cur = useStore.getState();
+    // Mid-drag redo would mutate the paint target underneath the in-flight
+    // stroke. Same root cause as undo's guard above (M8).
+    if (cur.isDragging) return;
     const stack = cur.redoStacks[sourceId];
     if (!stack || stack.length === 0) return;
     const delta = stack[stack.length - 1]!;
@@ -812,5 +873,6 @@ export function resetStore(): void {
     renderCounters: {},
     selection: null,
     onionSkin: false,
+    isDragging: false,
   });
 }

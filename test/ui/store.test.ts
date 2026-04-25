@@ -77,6 +77,40 @@ describe('store', () => {
     expect(prepared.frames[0]!.width).toBe(4);
   });
 
+  it('updateSlicing drops Animation FrameRefs whose rectIndex is now out of range (B1)', () => {
+    // 16x16 fully-opaque sheet so an 8x8 grid yields 4 surviving rects.
+    const img = createImage(16, 16);
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = 200;
+      img.data[i + 1] = 50;
+      img.data[i + 2] = 50;
+      img.data[i + 3] = 255;
+    }
+    const src = useStore.getState().addSource('opaque.png', {
+      kind: 'sheet',
+      format: 'png',
+      frames: [img],
+      delaysMs: [],
+      bytes: new Uint8Array(),
+    });
+    useStore.getState().updateSlicing(src.id, {
+      kind: 'grid', cellW: 8, cellH: 8, offsetX: 0, offsetY: 0, rows: 2, cols: 2,
+    });
+    expect(useStore.getState().prepared[src.id]!.frames).toHaveLength(4);
+    const anim = useStore.getState().addAnimation('walk');
+    useStore.getState().appendFrames(anim.id, [
+      { sourceId: src.id, rectIndex: 0 },
+      { sourceId: src.id, rectIndex: 2 },
+      { sourceId: src.id, rectIndex: 3 },
+    ]);
+    // Re-slice down to a single rect — refs 2 and 3 are now dangling.
+    useStore.getState().updateSlicing(src.id, {
+      kind: 'grid', cellW: 16, cellH: 16, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
+    });
+    const refs = useStore.getState().project.animations[0]!.frames;
+    expect(refs.map((r) => r.rectIndex)).toEqual([0]);
+  });
+
   it('removeSource strips frames from animations that referenced it', () => {
     const s = useStore.getState();
     const src = s.addSource('walk.png', mockSheetImport());
@@ -112,6 +146,29 @@ describe('store', () => {
     const out = useStore.getState().project.animations[0]!;
     expect(out.fps).toBe(24);
     expect(out.loop).toBe(false);
+  });
+
+  it('setAnimationFps clamps invalid numeric input to a sane default (M1)', () => {
+    const s = useStore.getState();
+    const a = s.addAnimation('a');
+    // Zero, negative, NaN, Infinity all collapse to the default. Without the
+    // guard, 0 produces Math.round(1000/0)=Infinity in the manifest export.
+    s.setAnimationFps(a.id, 0);
+    expect(useStore.getState().project.animations[0]!.fps).toBe(12);
+    s.setAnimationFps(a.id, -5);
+    expect(useStore.getState().project.animations[0]!.fps).toBe(12);
+    s.setAnimationFps(a.id, Number.NaN);
+    expect(useStore.getState().project.animations[0]!.fps).toBe(12);
+    s.setAnimationFps(a.id, Infinity);
+    expect(useStore.getState().project.animations[0]!.fps).toBe(12);
+    // Sane values are clamped to [1, 240] but otherwise preserved.
+    s.setAnimationFps(a.id, 999);
+    expect(useStore.getState().project.animations[0]!.fps).toBe(240);
+    s.setAnimationFps(a.id, 30);
+    expect(useStore.getState().project.animations[0]!.fps).toBe(30);
+    // 'per-frame' is the explicit string sentinel and must pass through.
+    s.setAnimationFps(a.id, 'per-frame');
+    expect(useStore.getState().project.animations[0]!.fps).toBe('per-frame');
   });
 });
 
