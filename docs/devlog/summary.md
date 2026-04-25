@@ -1,10 +1,10 @@
 # Devlog summary
 
-**Last updated:** 2026-04-24
+**Last updated:** 2026-04-25
 
 ## Current state
 
-v2 pixel drawing feature merged to `main` (Phases 1–3 + rounds 1/2/3 review follow-up). v1→v2 data-model migration, 12-tool palette (pencil/eraser/eyedropper/bucket + line/rect/ellipse/marquee/move/slice), undo/redo capped at 200/source, color swatches, multi-frame editing, onion skin, pixel grid at zoom ≥ 8, full Aseprite-style shortcut map. 266/266 tests pass, `npx tsc --noEmit` clean, `npx vite build` green (~144 kB gz). Two reviewers (Gemini, Claude CLI) signed off as mergeable in round 3.
+Manifest schema v2 shipped: `width/height` naming, always per-frame `durationMs`, `version: 2`, types exposed at `pixel_lab/manifest` for sibling-dep consumers. v2 pixel drawing remains merged. 266+/266+ tests pass, `npx tsc --noEmit` clean, `npx vite build` green.
 
 ## What exists
 
@@ -12,8 +12,8 @@ v2 pixel drawing feature merged to `main` (Phases 1–3 + rounds 1/2/3 review fo
 - `src/io/` — `detectFormat`, `decodeImport`, ZIP, FS Access API + anchor fallback, drag-drop.
 - `src/ui/` — Zustand store with drawing state (`activeTool`, colors, opacity, brushSize, `selectedFrameIndex`, undo/redo, `selection`, `onionSkin`, `renderCounters`). 5-zone Shell: left rail (ToolPalette + ColorPanel), SourcesPanel, Canvas, AnimationsPanel, FramesStrip. Canvas layers: onion skin, frame canvas, pixel grid, rects overlay, paint overlay (shape/marquee/move/slice preview). DOM canvases key on `renderCounters[sourceId]` so in-place mutations refresh without identity changes. NewBlankSource modal. `usePlayback` hook shared with PreviewBar.
 - `src/app/` — composition root.
-- KADs 001–007 (005 added MaxRects padding; 006 renamed `kind:'gif'` to `'sequence'`; 007 added `editedFrames` alongside `imageBytes`). Drift-log has 3 rows.
-- Detailed devlog: `docs/devlog/detailed/2026-04-23_2026-04-24.md`.
+- KADs 001–008 (005 added MaxRects padding; 006 renamed `kind:'gif'` to `'sequence'`; 007 added `editedFrames` alongside `imageBytes`; 008 bumped manifest to v2 schema). Drift-log has 4 rows.
+- Detailed devlog: `docs/devlog/detailed/2026-04-23_2026-04-25.md`.
 - Lessons: `docs/learning/lessons.md`.
 
 ## Known follow-ups
