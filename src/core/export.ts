@@ -1,7 +1,6 @@
 import type { Project, FrameRef, PreparedSource } from './types';
 import { packFrames, type PackInput } from './packer';
-import { buildManifest, type Manifest } from './serialize/manifest';
-import type { FrameInfo } from './serialize/manifest';
+import { buildManifest, type Manifest, type FrameInfo } from './serialize/manifest';
 import { encodePng } from './png';
 
 export interface ExportOptions {
@@ -24,8 +23,8 @@ function refKey(ref: FrameRef): string {
 /**
  * Assigns a human-readable name to each unique (sourceId, rectIndex)
  * reference in the project. A ref first encountered inside animation
- * `walk` at index 2 becomes `walk_2`. Orphan refs (in no animation) are
- * ignored — v1 exports only what the user built animations out of.
+ * `walk` at index 2 becomes `walk_2`.
+ * Orphan refs (not referenced by any animation) are excluded from the export.
  */
 function assignFrameNames(project: Project): Map<string, string> {
   const names = new Map<string, string>();
