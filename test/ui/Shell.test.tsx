@@ -46,6 +46,108 @@ function stubRect(
   });
 }
 
+describe('Shell — error surfacing', () => {
+  beforeEach(() => {
+    resetStore();
+    cleanup();
+  });
+
+  function fakeFile(name: string, bytes: Uint8Array): File {
+    // jsdom's File doesn't reliably implement arrayBuffer(), so we
+    // synthesize a minimal File-shape that does.
+    return {
+      name,
+      size: bytes.byteLength,
+      arrayBuffer: () => Promise.resolve(bytes.buffer.slice(0)),
+    } as unknown as File;
+  }
+
+  it('drop of a non-image file shows the app-error banner (M5)', async () => {
+    const { container } = render(<Shell />);
+    const shell = container.querySelector('.shell') as HTMLDivElement;
+    expect(shell).not.toBeNull();
+    expect(container.querySelector('.app-error')).toBeNull();
+
+    // Construct a dataTransfer with a file whose bytes aren't a valid PNG/GIF.
+    const garbage = fakeFile('oops.txt', new Uint8Array([1, 2, 3, 4]));
+    const dt = {
+      items: [{ kind: 'file', getAsFile: () => garbage }],
+      files: [garbage],
+    } as unknown as DataTransfer;
+
+    await act(async () => {
+      shell.dispatchEvent(
+        Object.assign(new Event('drop', { bubbles: true, cancelable: true }), {
+          dataTransfer: dt,
+          preventDefault() {},
+        }),
+      );
+      // Let the async handleDrop body settle.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const banner = container.querySelector('.app-error');
+    expect(banner).not.toBeNull();
+    expect(banner!.textContent ?? '').toMatch(/oops\.txt/);
+  });
+
+  it('shows the slicing-error banner when slicer throws (M11)', () => {
+    // Use a blank sheet source so Shell mounts a Canvas. Then push a
+    // slicing config the grid slicer refuses (cellW=0 throws). The
+    // Canvas captures the throw inside its useMemo and reports it via
+    // onSliceError → Shell's sliceError state → "Slicing error:" banner.
+    const src = useStore.getState().createBlankSource({
+      kind: 'sheet',
+      name: 'sheet',
+      width: 8,
+      height: 8,
+    });
+    useStore.getState().selectSource(src.id);
+    const { container } = render(<Shell />);
+    expect(container.textContent ?? '').not.toMatch(/Slicing error/);
+    act(() => {
+      useStore.getState().updateSlicing(src.id, {
+        kind: 'grid',
+        cellW: 0,
+        cellH: 4,
+        offsetX: 0,
+        offsetY: 0,
+        rows: 1,
+        cols: 1,
+      });
+    });
+    expect(container.textContent ?? '').toMatch(/Slicing error/);
+    expect(container.textContent ?? '').toMatch(/cellW and cellH must be positive/);
+  });
+
+  it('clicking the app-error banner dismisses it (M5)', async () => {
+    const { container } = render(<Shell />);
+    const shell = container.querySelector('.shell') as HTMLDivElement;
+    const garbage = fakeFile('bad.bin', new Uint8Array([0]));
+    const dt = {
+      items: [{ kind: 'file', getAsFile: () => garbage }],
+      files: [garbage],
+    } as unknown as DataTransfer;
+    await act(async () => {
+      shell.dispatchEvent(
+        Object.assign(new Event('drop', { bubbles: true, cancelable: true }), {
+          dataTransfer: dt,
+          preventDefault() {},
+        }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const banner = container.querySelector('.app-error') as HTMLElement;
+    expect(banner).not.toBeNull();
+    act(() => {
+      banner.click();
+    });
+    expect(container.querySelector('.app-error')).toBeNull();
+  });
+});
+
 describe('Shell — wheel zoom', () => {
   beforeEach(() => {
     resetStore();

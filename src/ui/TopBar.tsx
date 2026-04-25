@@ -17,7 +17,16 @@ function sanitizeFilenameStem(raw: string): string {
   return cleaned.length > 0 ? cleaned : 'untitled';
 }
 
-export function TopBar() {
+interface TopBarProps {
+  /**
+   * Surface async-handler failures to the parent's error banner. AbortError
+   * (user cancellation) is filtered upstream in Shell.reportAppError so we
+   * can rethrow it here without polluting the UI.
+   */
+  onError?: (err: unknown) => void;
+}
+
+export function TopBar({ onError }: TopBarProps = {}) {
   const project = useStore((s) => s.project);
   const prepared = useStore((s) => s.prepared);
   const newProject = useStore((s) => s.newProject);
@@ -26,34 +35,46 @@ export function TopBar() {
   const [blankOpen, setBlankOpen] = useState(false);
 
   async function handleSave() {
-    const json = projectToJson(project);
-    const stem = sanitizeFilenameStem(project.name);
-    await saveBytes(new TextEncoder().encode(json), {
-      suggestedName: `${stem}.pixellab.json`,
-      mimeType: 'application/json',
-      extension: '.pixellab.json',
-    });
+    try {
+      const json = projectToJson(project);
+      const stem = sanitizeFilenameStem(project.name);
+      await saveBytes(new TextEncoder().encode(json), {
+        suggestedName: `${stem}.pixellab.json`,
+        mimeType: 'application/json',
+        extension: '.pixellab.json',
+      });
+    } catch (err) {
+      onError?.(err);
+    }
   }
 
   async function handleOpen() {
-    const [bytes] = await openBytes({
-      accept: { 'application/json': ['.json', '.pixellab.json'] },
-    });
-    if (!bytes) return;
-    const text = new TextDecoder().decode(bytes);
-    loadProject(projectFromJson(text));
+    try {
+      const [bytes] = await openBytes({
+        accept: { 'application/json': ['.json', '.pixellab.json'] },
+      });
+      if (!bytes) return;
+      const text = new TextDecoder().decode(bytes);
+      loadProject(projectFromJson(text));
+    } catch (err) {
+      onError?.(err);
+    }
   }
 
   async function handleExport() {
-    const preparedArr = Object.values(prepared);
-    const bundle = buildExport(project, preparedArr, { emitPerFrame: true });
-    const zip = buildZip(bundle.files);
-    const stem = sanitizeFilenameStem(project.name);
-    await saveBytes(zip, {
-      suggestedName: `${stem}.zip`,
-      mimeType: 'application/zip',
-      extension: '.zip',
-    });
+    try {
+      const preparedArr = Object.values(prepared);
+      const bundle = buildExport(project, preparedArr, { emitPerFrame: true });
+      const zip = buildZip(bundle.files);
+      const stem = sanitizeFilenameStem(project.name);
+      await saveBytes(zip, {
+        suggestedName: `${stem}.zip`,
+        mimeType: 'application/zip',
+        extension: '.zip',
+      });
+    } catch (err) {
+      onError?.(err);
+    }
   }
 
   return (

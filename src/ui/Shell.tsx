@@ -26,6 +26,17 @@ export function Shell() {
   const [panning, setPanning] = useState(false);
   const [sliceError, setSliceError] = useState<string | null>(null);
   const handleSliceError = useCallback((msg: string) => setSliceError(msg), []);
+  // App-level errors (Open / Drop / Save / Export). Separate from
+  // sliceError so an in-flight slice retry doesn't accidentally clear an
+  // unrelated import failure (M5).
+  const [appError, setAppError] = useState<string | null>(null);
+  const reportAppError = useCallback((err: unknown) => {
+    // User cancellation surfaces as DOMException(AbortError); silence it
+    // because the user already saw the cancel.
+    if (err instanceof DOMException && err.name === 'AbortError') return;
+    const msg = err instanceof Error ? err.message : String(err);
+    setAppError(msg);
+  }, []);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef<
     | { startClientX: number; startClientY: number; scrollLeft: number; scrollTop: number }
@@ -151,7 +162,14 @@ export function Shell() {
         const imported = decodeImport(bytes);
         addSource(file.name, imported);
       } catch (err) {
-        console.error(`Drop failed for ${file.name}:`, err);
+        // Surface the failure through the app-error banner so the user
+        // sees what happened. Previously this was console.error-only and
+        // a user dropping the wrong file got silent failure (M5).
+        reportAppError(
+          err instanceof Error
+            ? new Error(`${file.name}: ${err.message}`)
+            : new Error(`${file.name}: ${String(err)}`),
+        );
       }
     }
   }
@@ -175,7 +193,7 @@ export function Shell() {
       onDrop={handleDrop}
     >
       {dragging ? <div className="drop-overlay">Drop to import</div> : null}
-      <TopBar />
+      <TopBar onError={reportAppError} />
       <div className="left-rail">
         <ToolPalette />
         <ColorPanel />
@@ -211,6 +229,16 @@ export function Shell() {
         {sliceError ? (
           <div className="empty" style={{ color: 'var(--danger)', padding: '4px 12px' }}>
             Slicing error: {sliceError}
+          </div>
+        ) : null}
+        {appError ? (
+          <div
+            className="empty app-error"
+            style={{ color: 'var(--danger)', padding: '4px 12px', cursor: 'pointer' }}
+            onClick={() => setAppError(null)}
+            title="Click to dismiss"
+          >
+            Error: {appError}
           </div>
         ) : null}
         {selected ? (
