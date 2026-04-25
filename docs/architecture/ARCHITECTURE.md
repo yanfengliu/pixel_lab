@@ -49,8 +49,10 @@ See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` for the v1 schema an
 1. Resolve `FrameRef` → `ImageData`.
 2. Dedupe identical frame refs.
 3. Pack into atlas via MaxRects, 1px transparent padding, no trim.
-4. Emit `manifest.json` + atlas PNG + optional per-frame PNGs.
+4. Emit `manifest.json` (v2: `width/height` field naming, per-frame `durationMs` for every animation, deduped top-level `frames` table) + atlas PNG + optional per-frame PNGs.
 5. ZIP via `fflate` and hand to `io` to write.
+
+The manifest schema is exposed as a public package subpath: external consumers (e.g. idle-life) import `Manifest` and related types from `pixel_lab/manifest` (mapped to `src/core/serialize/manifest-types.ts`) via a `file:` sibling dep. See KAD-008.
 
 ## Testing layers
 

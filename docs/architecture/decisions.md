@@ -65,3 +65,15 @@ When a user draws on an imported asset, the edited pixels are stored as `Source.
 Rationale: (1) editing can never corrupt an imported asset — the user can always see / inspect what they brought in; (2) provenance survives in the project file even after extensive editing; (3) the v1 file format stays forward-compatible: a v2 file with no edits serializes identically to its v1 equivalent aside from the version bump.
 
 Tradeoff: `.pixellab.json` grows when frames are edited, because each edited frame is a base64-encoded PNG in addition to the original `imageBytes`. Accepted: project files are not bandwidth-sensitive, and the alternative (re-encoding + losing the original) is unrecoverable.
+
+---
+
+## KAD-008 — Manifest schema v2: width/height naming, per-frame durationMs only, top-level frame table
+
+**Date:** 2026-04-25 **Status:** Accepted
+
+The exported `manifest.json` moves to v2: frame rects use `width`/`height` (not `w`/`h`) to match Aseprite/TexturePacker conventions; animation timing is always per-frame `durationMs` (uniform-fps animations get `Math.round(1000 / fps)` per frame at export); `version: 1` becomes `version: 2`. The deduped top-level `frames` table stays — it lets multiple animations and repeated references share frame data without re-emitting coords.
+
+This supersedes KAD-003's v1 manifest description in spirit while leaving KAD-003 in place per the append-only rule.
+
+Rationale: pixel_lab now has an in-house consumer (idle-life) that imports the manifest type directly via `file:` sibling dep. A clean schema with one timing model and standard field names eliminates a translation layer in every consumer. The cost is a one-time breaking change for any in-flight v1 manifest, which is zero given pixel_lab has no third-party consumers yet.
