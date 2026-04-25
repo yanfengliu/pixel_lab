@@ -396,6 +396,151 @@ describe('Canvas — slice-rect tool', () => {
     expect(slicing.rects[0]).toEqual({ x: 1, y: 2, w: 5, h: 5 });
   });
 
+  it('Ctrl+Z mid-drag is a no-op (isDragging gates undo) (M8)', () => {
+    // Mid-drag undo would mutate the bitmap underneath the in-flight stroke
+    // and the eventual commit would record a corrupted delta. After the
+    // pointerDown but before pointerUp, the store's isDragging flag is set,
+    // and undo should refuse to run.
+    useStore.getState().setActiveTool('pencil');
+    useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });
+    const { src, bmp, container } = mountForSheet({ w: 16, h: 16 });
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    // Lay down a baseline stroke so we have a non-empty undo stack to
+    // attempt to pop mid-drag.
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1, clientY: 1 });
+    fireEvent.pointerUp(overlay, { clientX: 1, clientY: 1 });
+    expect(useStore.getState().undoStacks[src.id]?.length).toBe(1);
+    expect(useStore.getState().isDragging).toBe(false);
+    // Start a second drag — isDragging must flip to true.
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 5, clientY: 5 });
+    expect(useStore.getState().isDragging).toBe(true);
+    // Undo while dragging is gated: pixel (1,1) stays painted, undoStacks
+    // length unchanged.
+    useStore.getState().undo(src.id);
+    expect(bmp.data[(1 * bmp.width + 1) * 4 + 3]).toBe(255);
+    expect(useStore.getState().undoStacks[src.id]?.length).toBe(1);
+    // End the drag.
+    fireEvent.pointerUp(overlay, { clientX: 5, clientY: 5 });
+    expect(useStore.getState().isDragging).toBe(false);
+    // Undo now works: clears both strokes (the second drag's commit pushed
+    // a new entry onto the stack, then this undo pops it). Just check the
+    // stack shrank and (1,1) eventually clears across two undos.
+    useStore.getState().undo(src.id);
+    useStore.getState().undo(src.id);
+    expect(useStore.getState().sheetBitmaps[src.id]!.data[(1 * 16 + 1) * 4 + 3]).toBe(0);
+  });
+
+  it('rects overlay refreshes when paint opens a previously-empty grid cell (M3)', () => {
+    // 8x8 blank sheet sliced 4x4 cells = 4 cells, all transparent → 0 rects.
+    // Painting into one cell should make exactly one rect appear in the
+    // overlay. Without the renderCounter dep on Canvas's slice useMemo, the
+    // memo re-uses the stale empty array (paintTarget reference is stable
+    // across in-place paints).
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 'm', width: 8, height: 8 });
+    useStore.getState().selectSource(src.id);
+    useStore.getState().updateSlicing(src.id, {
+      kind: 'grid', cellW: 4, cellH: 4, offsetX: 0, offsetY: 0, rows: 2, cols: 2,
+    });
+    useStore.getState().setActiveTool('pencil');
+    useStore.getState().setPrimaryColor({ r: 200, g: 50, b: 25, a: 255 });
+    const source = useStore
+      .getState()
+      .project.sources.find((x) => x.id === src.id)!;
+    const bmp = useStore.getState().sheetBitmaps[src.id]!;
+    const { container } = render(
+      <Canvas source={source} bitmap={bmp} zoom={1} onSlicingChange={() => {}} />,
+    );
+    expect(container.querySelectorAll('.rect-outline').length).toBe(0);
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    // Paint a pixel inside cell (1, 0) — pixel (5, 1) lives in that cell.
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 5, clientY: 1 });
+    fireEvent.pointerUp(overlay);
+    expect(container.querySelectorAll('.rect-outline').length).toBe(1);
+  });
+
+  it('clamps slice rect to bitmap bounds when drag exits the canvas (M2)', () => {
+    // Drag from (5,6) inside an 8x8 bitmap to (40,40), well past the right
+    // and bottom edges. eventToPixel allows overshoot for shape tools, but
+    // the slice tool must not author a rect that crosses the bitmap edge —
+    // prepareSheet's crop() throws on out-of-bounds rects.
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 'm', width: 8, height: 8 });
+    useStore.getState().selectSource(src.id);
+    useStore.getState().updateSlicing(src.id, { kind: 'manual', rects: [] });
+    useStore.getState().setActiveTool('slice');
+    const source = useStore
+      .getState()
+      .project.sources.find((x) => x.id === src.id)!;
+    const bmp = useStore.getState().sheetBitmaps[src.id]!;
+    const { container } = render(
+      <Canvas
+        source={source}
+        bitmap={bmp}
+        zoom={1}
+        onSlicingChange={(s) =>
+          useStore.getState().updateSlicing(src.id, s)
+        }
+      />,
+    );
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 5, clientY: 6 });
+    fireEvent.pointerMove(overlay, { clientX: 40, clientY: 40, buttons: 1 });
+    fireEvent.pointerUp(overlay, { clientX: 40, clientY: 40 });
+    const slicing = useStore
+      .getState()
+      .project.sources.find((x) => x.id === src.id)!.slicing;
+    if (slicing.kind !== 'manual') throw new Error();
+    expect(slicing.rects).toHaveLength(1);
+    const r = slicing.rects[0]!;
+    // Rect must be entirely within the 8x8 bitmap.
+    expect(r.x).toBeGreaterThanOrEqual(0);
+    expect(r.y).toBeGreaterThanOrEqual(0);
+    expect(r.x + r.w).toBeLessThanOrEqual(8);
+    expect(r.y + r.h).toBeLessThanOrEqual(8);
+  });
+
+  it('drops slice rect entirely when drag is outside the bitmap (M2)', () => {
+    // Drag entirely beyond the right edge. After clamping, w/h would be 0
+    // — the slice tool should drop the gesture rather than push a degenerate
+    // rect that prepareSheet would later reject.
+    const src = useStore
+      .getState()
+      .createBlankSource({ kind: 'sheet', name: 'm', width: 8, height: 8 });
+    useStore.getState().selectSource(src.id);
+    useStore.getState().updateSlicing(src.id, { kind: 'manual', rects: [] });
+    useStore.getState().setActiveTool('slice');
+    const source = useStore
+      .getState()
+      .project.sources.find((x) => x.id === src.id)!;
+    const bmp = useStore.getState().sheetBitmaps[src.id]!;
+    const { container } = render(
+      <Canvas
+        source={source}
+        bitmap={bmp}
+        zoom={1}
+        onSlicingChange={(s) =>
+          useStore.getState().updateSlicing(src.id, s)
+        }
+      />,
+    );
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(overlay, { clientX: 30, clientY: 30, buttons: 1 });
+    fireEvent.pointerUp(overlay, { clientX: 30, clientY: 30 });
+    const slicing = useStore
+      .getState()
+      .project.sources.find((x) => x.id === src.id)!.slicing;
+    if (slicing.kind !== 'manual') throw new Error();
+    expect(slicing.rects).toHaveLength(0);
+  });
+
   it('contextmenu suppression only fires when a manual rect is hit (N-G1)', () => {
     // Two manual rects, slice tool active. Right-click inside rect[0]
     // must preventDefault (the slice tool will delete it via mousedown).

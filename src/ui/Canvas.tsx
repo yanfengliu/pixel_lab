@@ -5,7 +5,7 @@ import { createImage } from '../core/image';
 import { slice } from '../core/slicers';
 import {
   stampDot,
-  stampLine,
+  stampLineFrom,
   stampErase,
   stampEraseLine,
   floodFill,
@@ -96,16 +96,26 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paintTarget, renderCounter]);
 
-  const rects = useMemo<Rect[]>(() => {
+  // Re-slice on every committed paint (renderCounter bumps in-place mutation
+  // of the sheet bitmap). Without renderCounter in deps, painting into a
+  // previously-empty grid cell would never refresh the rects overlay because
+  // paintTarget's reference is stable across in-place mutations (M3). Errors
+  // are returned, not thrown out of the memo, so we don't fire setState on
+  // a different component during render — surface them via useEffect (m1).
+  const sliced = useMemo<{ rects: Rect[]; error: string | null }>(() => {
     try {
-      if (source.slicing.kind === 'sequence') return [];
-      return slice(paintTarget, source.slicing);
+      if (source.slicing.kind === 'sequence') return { rects: [], error: null };
+      return { rects: slice(paintTarget, source.slicing), error: null };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      onSliceError?.(msg);
-      return [];
+      return { rects: [], error: msg };
     }
-  }, [paintTarget, source.slicing, onSliceError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paintTarget, source.slicing, renderCounter]);
+  const rects = sliced.rects;
+  useEffect(() => {
+    if (sliced.error) onSliceError?.(sliced.error);
+  }, [sliced.error, onSliceError]);
 
   // Current selection on this source+frame, if any.
   const activeSelection =
@@ -378,6 +388,13 @@ function PaintOverlay({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  // Keep dragRef and store.isDragging in lockstep so undo/redo know to bail
+  // mid-drag (M8). Use this helper everywhere instead of writing dragRef
+  // directly so the flag never goes stale.
+  const setDragRef = (s: DragState | null) => {
+    dragRef.current = s;
+    useStore.getState().setDragging(s !== null);
+  };
   // Preallocated preview buffer + ImageData for shape-tool drags so we
   // don't allocate a new Uint8ClampedArray + ImageData per mousemove.
   // Reset on bitmap size change (see resetPreviewBuffer below).
@@ -659,14 +676,14 @@ function PaintOverlay({
           stampErase(bitmap, p.x, p.y, brushSize);
         }
         onRepaintCanvas();
-        dragRef.current = {
+        setDragRef({
           kind: 'brush',
           tool: activeTool,
           commit,
           lastX: p.x,
           lastY: p.y,
           brush,
-        };
+        });
         return;
       }
 
@@ -675,27 +692,27 @@ function PaintOverlay({
       case 'rectFilled':
       case 'ellipseOutline':
       case 'ellipseFilled':
-        dragRef.current = {
+        setDragRef({
           kind: 'shape',
           tool: activeTool,
           x0: p.x,
           y0: p.y,
           x1: p.x,
           y1: p.y,
-        };
+        });
         drawPreview();
         return;
 
       case 'marquee':
         // New marquee drag clears any existing selection.
         clearSelection();
-        dragRef.current = {
+        setDragRef({
           kind: 'marquee',
           x0: p.x,
           y0: p.y,
           x1: p.x,
           y1: p.y,
-        };
+        });
         drawPreview();
         return;
 
@@ -710,7 +727,7 @@ function PaintOverlay({
         // painted canvas shows the source region already lifted.
         bitmap.data.set(cleared.data);
         onRepaintCanvas();
-        dragRef.current = {
+        setDragRef({
           kind: 'move',
           startRect: { ...selection.rect },
           pixels,
@@ -720,20 +737,20 @@ function PaintOverlay({
           dx: 0,
           dy: 0,
           commit,
-        };
+        });
         drawPreview();
         return;
       }
 
       case 'slice':
         if (slicing.kind !== 'manual') return;
-        dragRef.current = {
+        setDragRef({
           kind: 'slice',
           x0: p.x,
           y0: p.y,
           x1: p.x,
           y1: p.y,
-        };
+        });
         drawPreview();
         return;
     }
@@ -760,8 +777,12 @@ function PaintOverlay({
       case 'brush': {
         if (p.x === d.lastX && p.y === d.lastY) return;
         if (d.tool === 'pencil') {
-          stampLine(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
+          // Use the start-excluded variant: (lastX, lastY) was already
+          // painted (mousedown stampDot or the previous segment's endpoint),
+          // so re-painting it would compound opacity at the join (M7).
+          stampLineFrom(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
         } else {
+          // Eraser writes 0,0,0,0 — idempotent — so double-paint is harmless.
           stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSizeRef.current);
         }
         d.lastX = p.x;
@@ -819,8 +840,9 @@ function PaintOverlay({
       // 'commit' isn't on their drag state so this branch skips them.
       d.commit();
     }
-    dragRef.current = null;
-    clearPreview();
+    setDragRef(null);
+    // drawPreview already calls ctx.clearRect first; the prior clearPreview()
+    // here was redundant (n7).
     drawPreview();
   }
 
@@ -872,13 +894,21 @@ function PaintOverlay({
         }
         case 'slice': {
           if (slicing.kind !== 'manual') return;
-          const r = dragToRect(d.x0, d.y0, d.x1, d.y1);
+          // eventToPixel deliberately allows overshoot past the bitmap edge
+          // so shape tools paint to the boundary on a slightly off-canvas
+          // drag. The slice tool must NOT inherit that overshoot — prepareSheet
+          // calls crop() on each manual rect and crop() throws on any rect that
+          // crosses the bitmap edge. Clip to bounds; drop the rect entirely if
+          // the drag was wholly outside the bitmap (M2).
+          const raw = dragToRect(d.x0, d.y0, d.x1, d.y1);
+          const r = clipRectToBitmap(raw, bitmap.width, bitmap.height);
+          if (!r) return;
           onSlicingChange({ kind: 'manual', rects: [...slicing.rects, r] });
           return;
         }
       }
     } finally {
-      dragRef.current = null;
+      setDragRef(null);
       clearPreview();
       // Re-render preview to reflect any selection set in the finally.
       drawPreview();
@@ -922,7 +952,7 @@ function PaintOverlay({
           d.commit();
         }
       }
-      dragRef.current = null;
+      setDragRef(null);
       clearPreview();
       // Release any pointer capture still in flight so the next drag
       // starts cleanly. Browsers also auto-release on unmount, but doing
@@ -1057,6 +1087,20 @@ function dragToRect(x0: number, y0: number, x1: number, y1: number): Rect {
   const w = Math.abs(x1 - x0) + 1;
   const h = Math.abs(y1 - y0) + 1;
   return { x, y, w, h };
+}
+
+/**
+ * Intersect `r` with `[0,w) × [0,h)`. Returns `null` if the intersection is
+ * empty (the rect is entirely outside the bitmap, so the gesture should be
+ * dropped rather than authored as a degenerate manual slice).
+ */
+function clipRectToBitmap(r: Rect, w: number, h: number): Rect | null {
+  const x0 = Math.max(0, r.x);
+  const y0 = Math.max(0, r.y);
+  const x1 = Math.min(w, r.x + r.w);
+  const y1 = Math.min(h, r.y + r.h);
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /**
