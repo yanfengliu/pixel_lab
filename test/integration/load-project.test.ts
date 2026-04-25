@@ -92,4 +92,50 @@ describe('loadProject end-to-end', () => {
     });
     expect(() => projectFromJson(invalidKind)).toThrow(/invalid kind/);
   });
+
+  it('rejects a sequence source with no editedFrames AND empty imageBase64 (M4)', () => {
+    // Without this guard, loadProject would call decodeGif(empty) and
+    // throw inside parseGIF, taking down the whole UI rather than
+    // surfacing a clean validation error at the boundary.
+    const bad = JSON.stringify({
+      version: 2,
+      name: 'x',
+      sources: [
+        {
+          id: 'a',
+          name: 'a',
+          kind: 'sequence',
+          width: 4,
+          height: 4,
+          imageBase64: '',
+          slicing: { kind: 'sequence' },
+        },
+      ],
+      animations: [],
+    });
+    expect(() => projectFromJson(bad)).toThrow(/sequence/i);
+  });
+
+  it('accepts a sequence source with editedFrames and empty imageBase64 (blank seq)', () => {
+    const frame = createImage(4, 4);
+    const bytes = encodePng(frame);
+    const ok = JSON.stringify({
+      version: 2,
+      name: 'x',
+      sources: [
+        {
+          id: 'a',
+          name: 'a',
+          kind: 'sequence',
+          width: 4,
+          height: 4,
+          imageBase64: '',
+          editedFrames: [Buffer.from(bytes).toString('base64')],
+          slicing: { kind: 'sequence' },
+        },
+      ],
+      animations: [],
+    });
+    expect(() => projectFromJson(ok)).not.toThrow();
+  });
 });

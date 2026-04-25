@@ -33,7 +33,7 @@ export function buildManifest(input: BuildManifestInput): Manifest {
       const durationMs =
         a.fps === 'per-frame'
           ? (f.durationMs ?? 100)
-          : Math.round(1000 / (a.fps as number));
+          : safeDurationMs(a.fps as number);
       return { name, durationMs };
     });
 
@@ -45,4 +45,16 @@ export function buildManifest(input: BuildManifestInput): Manifest {
     frames: input.frames,
     animations,
   };
+}
+
+/**
+ * Convert a uniform-FPS animation into per-frame durationMs, defending
+ * against fps values that bypass the store's `validateFps` (e.g. tampered
+ * project files loaded via `projectFromJson`). Without this guard, fps=0
+ * produces Infinity, which JSON.stringify writes as `null` and breaks every
+ * consumer's timing field.
+ */
+function safeDurationMs(fps: number): number {
+  if (!Number.isFinite(fps) || fps <= 0) return Math.round(1000 / 12);
+  return Math.round(1000 / fps);
 }
