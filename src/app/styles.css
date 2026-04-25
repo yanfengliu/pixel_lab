@@ -436,16 +436,6 @@ input[type="number"] { width: 60px; }
   background: rgba(107, 167, 255, 0.08);
   box-sizing: border-box;
 }
-.rect-outline.selected { border-color: var(--good); background: rgba(96, 211, 148, 0.12); }
-.rect-outline .handle {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  background: var(--accent);
-  right: -3px;
-  bottom: -3px;
-  cursor: se-resize;
-}
 
 .slicer-controls {
   padding: 8px 12px;
@@ -460,7 +450,6 @@ input[type="number"] { width: 60px; }
 .slicer-controls .zoom { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 
 .preview {
-  grid-area: preview;
   background: var(--panel);
   display: flex;
   align-items: center;
@@ -531,13 +520,3 @@ input[type="number"] { width: 60px; }
   z-index: 10;
 }
 
-.row-grouping {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.row-grouping .row-input { display: flex; gap: 4px; align-items: center; }
-.row-grouping button.small { padding: 2px 6px; font-size: 11px; }

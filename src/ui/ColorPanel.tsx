@@ -54,7 +54,7 @@ export function ColorPanel() {
   }
 
   function onDragStart(idx: number) {
-    return (_e: DragEvent) => setDragFromIdx(idx);
+    return () => setDragFromIdx(idx);
   }
   function onDragOver(e: DragEvent) {
     e.preventDefault();
