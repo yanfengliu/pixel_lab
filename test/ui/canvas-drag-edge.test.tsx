@@ -211,6 +211,42 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
   });
 
+  it('pointercancel mid-move reverts the lifted pixels (touch palm rejection / OS gesture)', () => {
+    // Regression for review I-1 on the pointer-events branch: pointercancel
+    // fires when the OS revokes the gesture (touch palm rejection,
+    // multi-touch, OS swipe). It used to route to handleUp, which for a
+    // move drag would PASTE at the cancel-time cursor offset and commit —
+    // silently dropping the selection at a half-completed location. Should
+    // revert to origin instead.
+    const { src, bmp, overlay } = setupLiftedMove();
+    // Fire pointercancel without prior pointermove — the move's dx/dy is 0
+    // but the contract is to revert, not commit. The pixel at (2,2) must
+    // come back, and no new delta should appear.
+    fireEvent.pointerCancel(overlay, { clientX: 5.5, clientY: 5.5 });
+    expect(bmp.data[(2 * bmp.width + 2) * 4]).toBe(200);
+    expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(255);
+    expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1); // only the original pencil stroke
+  });
+
+  it('pointercancel mid-brush commits the in-progress stroke (so undo can recover)', () => {
+    // Brush drags differ from move: by the time pointercancel arrives the
+    // stroke pixels are already on the bitmap. Discarding without commit
+    // would leave them orphaned (no undo entry, but pixels stuck). Commit
+    // on cancel so the user can Ctrl+Z them.
+    useStore.getState().setActiveTool('pencil');
+    useStore.getState().setPrimaryColor({ r: 99, g: 99, b: 99, a: 255 });
+    const { src, bmp, container } = mountForSheet();
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    expect(bmp.data[(1 * bmp.width + 1) * 4]).toBe(99);
+    fireEvent.pointerCancel(overlay, { clientX: 1.5, clientY: 1.5 });
+    // Pixel still there.
+    expect(bmp.data[(1 * bmp.width + 1) * 4 + 3]).toBe(255);
+    // And undo stack has the brush stroke so undo restores it.
+    expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
+  });
+
   it('mid-move tool switch reverts the lifted pixels rather than committing a cut', () => {
     const { src, bmp } = setupLiftedMove();
     // Tool switch tears down the move drag.

@@ -169,15 +169,14 @@ input[type="number"] { width: 60px; }
 }
 .color-panel .color-slots {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
   /* Stack vertically: the left rail is too narrow (~64px) to hold two
      chip+hex slots side-by-side without overflowing. Vertical stacking
      matches Aseprite's behaviour at narrow widths and avoids the
      horizontal scrollbar / clipped hex inputs (catch-up review I2). */
   flex-direction: column;
   align-items: stretch;
+  gap: 4px;
+  min-width: 0;
 }
 .color-panel .color-slots .swap-btn {
   align-self: center;

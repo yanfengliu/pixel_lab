@@ -792,7 +792,39 @@ function PaintOverlay({
     }
   }
 
-  function handleUp(ev: React.PointerEvent<HTMLDivElement> | PointerEvent) {
+  // pointercancel fires when the OS or browser revokes the gesture (palm
+  // rejection on touch, multi-touch promotion, fullscreen toggle, OS
+  // gestures). Standard semantics: the user did NOT intend to commit, so
+  // route to the same revert-or-discard logic the abandoned-drag cleanup
+  // uses. For move drags this means pasting lifted pixels back at the
+  // origin rather than at the cancel-time cursor offset (which would
+  // silently land a half-completed move and read as data loss on touch).
+  function handleCancel(_ev: React.PointerEvent<HTMLDivElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    capturedPointerIdRef.current = null;
+    if (d.kind === 'move') {
+      const reverted = pasteSelection(
+        bitmap,
+        d.startRect.x,
+        d.startRect.y,
+        d.pixels,
+        d.mask,
+      );
+      bitmap.data.set(reverted.data);
+      onRepaintCanvas();
+    } else if ('commit' in d) {
+      // Brush: in-progress pixels are already on the bitmap; commit so
+      // undo can recover. Shape/marquee/slice have no bitmap writes;
+      // 'commit' isn't on their drag state so this branch skips them.
+      d.commit();
+    }
+    dragRef.current = null;
+    clearPreview();
+    drawPreview();
+  }
+
+  function handleUp(ev: React.PointerEvent<HTMLDivElement>) {
     const d = dragRef.current;
     if (!d) return;
     shiftRef.current = ev.shiftKey;
@@ -962,7 +994,7 @@ function PaintOverlay({
         onPointerDown={handleDown}
         onPointerMove={handleMove}
         onPointerUp={handleUp}
-        onPointerCancel={handleUp}
+        onPointerCancel={handleCancel}
         onContextMenu={(e) => {
           // Suppress the browser menu only when the slice tool would
           // actually consume this right-click (hit-test matches a manual

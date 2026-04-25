@@ -73,6 +73,25 @@ export function Shell() {
   // user releases the button outside the window.
   const capturedPanPointerIdRef = useRef<number | null>(null);
 
+  // Mirror Canvas's defense-in-depth release: if the component unmounts
+  // mid-pan, explicitly release the captured pointer. Browsers auto-
+  // release on unmount so this is belt-and-suspenders, but the symmetry
+  // with Canvas keeps the pattern consistent for future maintainers.
+  useEffect(() => {
+    return () => {
+      const id = capturedPanPointerIdRef.current;
+      if (id !== null && viewportRef.current) {
+        try {
+          viewportRef.current.releasePointerCapture(id);
+        } catch {
+          // Already released or never captured.
+        }
+      }
+      capturedPanPointerIdRef.current = null;
+      panRef.current = null;
+    };
+  }, []);
+
   function handleViewportPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 1) return;
     const vp = viewportRef.current;
