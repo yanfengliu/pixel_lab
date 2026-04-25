@@ -1,6 +1,7 @@
 import type { Project, FrameRef, PreparedSource } from './types';
 import { packFrames, type PackInput } from './packer';
 import { buildManifest, type Manifest } from './serialize/manifest';
+import type { FrameInfo } from './serialize/manifest';
 import { encodePng } from './png';
 
 export interface ExportOptions {
@@ -75,9 +76,9 @@ export function buildExport(
   const pack = packFrames(inputs, { padding: opts.padding ?? 1 });
   const atlasBytes = encodePng(pack.atlas);
 
-  const frameCoords: Record<string, { x: number; y: number; w: number; h: number }> = {};
+  const frameCoords: Record<string, FrameInfo> = {};
   for (const p of pack.placements) {
-    frameCoords[p.id] = { x: p.x, y: p.y, w: p.w, h: p.h };
+    frameCoords[p.id] = { x: p.x, y: p.y, width: p.w, height: p.h };
   }
 
   const manifest = buildManifest({
