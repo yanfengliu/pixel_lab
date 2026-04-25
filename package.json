@@ -2,6 +2,10 @@
   "name": "pixel_lab",
   "private": true,
   "version": "0.1.0",
+  "types": "./src/core/serialize/manifest-types.ts",
+  "exports": {
+    "./manifest": "./src/core/serialize/manifest-types.ts"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
