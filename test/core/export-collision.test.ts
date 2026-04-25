@@ -48,10 +48,10 @@ describe('buildExport frame-key uniqueness under sanitize collapse', () => {
     const bundle = buildExport(project, prepared);
     // Each animation must reference a distinct frame key, and the
     // manifest.frames map must contain a coord for each.
-    const animA = bundle.manifest.animations['walk!']!.frames as string[];
-    const animB = bundle.manifest.animations['walk_']!.frames as string[];
-    expect(animA[0]).not.toEqual(animB[0]);
-    expect(bundle.manifest.frames[animA[0]!]).toBeDefined();
-    expect(bundle.manifest.frames[animB[0]!]).toBeDefined();
+    const animA = bundle.manifest.animations['walk!']!.frames;
+    const animB = bundle.manifest.animations['walk_']!.frames;
+    expect(animA[0]!.name).not.toEqual(animB[0]!.name);
+    expect(bundle.manifest.frames[animA[0]!.name]).toBeDefined();
+    expect(bundle.manifest.frames[animB[0]!.name]).toBeDefined();
   });
 });

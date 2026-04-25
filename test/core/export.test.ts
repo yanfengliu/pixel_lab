@@ -75,10 +75,17 @@ describe('buildExport', () => {
     expect(Object.keys(m.frames).length).toBe(3); // deduped
   });
 
-  it('manifest animation lists names in animation order (including repeats)', () => {
+  it('manifest animation lists frames with names + per-frame durationMs', () => {
     const bundle = buildExport(project, prepared);
     const anim = bundle.manifest.animations.walk!;
-    expect(anim.frames).toEqual(['walk_0', 'walk_1', 'walk_2', 'walk_0']);
+    expect(anim.loop).toBe(true);
+    // fps: 12 -> 1000/12 = 83.33 -> rounded to 83 ms
+    expect(anim.frames).toEqual([
+      { name: 'walk_0', durationMs: 83 },
+      { name: 'walk_1', durationMs: 83 },
+      { name: 'walk_2', durationMs: 83 },
+      { name: 'walk_0', durationMs: 83 },
+    ]);
   });
 
   it('omits frames/ output by default, includes when emitPerFrame=true', () => {
@@ -91,17 +98,13 @@ describe('buildExport', () => {
     expect(frameFiles.length).toBe(3);
   });
 
-  it('packs uniform-fps animation frames as strings', () => {
+  it('manifest is v2 and has no fps field on animations', () => {
     const bundle = buildExport(project, prepared);
-    expect(bundle.manifest.animations.walk!.fps).toBe(12);
-    expect(Array.isArray(bundle.manifest.animations.walk!.frames)).toBe(true);
-    // strings, not objects
-    for (const f of bundle.manifest.animations.walk!.frames) {
-      expect(typeof f).toBe('string');
-    }
+    expect(bundle.manifest.version).toBe(2);
+    expect((bundle.manifest.animations.walk as unknown as Record<string, unknown>).fps).toBeUndefined();
   });
 
-  it('packs per-frame timing animations with durationMs objects', () => {
+  it('packs per-frame timing animations with durationMs preserved per frame', () => {
     const perFrame: Project = {
       ...project,
       animations: [
@@ -118,8 +121,10 @@ describe('buildExport', () => {
       ],
     };
     const bundle = buildExport(perFrame, prepared);
-    const frames = bundle.manifest.animations.walk!.frames;
-    expect(bundle.manifest.animations.walk!.fps).toBeNull();
-    expect(frames[0]).toEqual({ name: 'walk_0', durationMs: 100 });
+    const anim = bundle.manifest.animations.walk!;
+    expect(anim.frames).toEqual([
+      { name: 'walk_0', durationMs: 100 },
+      { name: 'walk_1', durationMs: 50 },
+    ]);
   });
 });

@@ -211,12 +211,12 @@ describe('project serialize', () => {
 describe('buildManifest', () => {
   const atlas = { image: 'atlas.png', width: 64, height: 64 };
   const frames = {
-    walk_0: { x: 0, y: 0, w: 16, h: 16 },
-    walk_1: { x: 16, y: 0, w: 16, h: 16 },
+    walk_0: { x: 0, y: 0, width: 16, height: 16 },
+    walk_1: { x: 16, y: 0, width: 16, height: 16 },
   };
   const refToKey = (r: { rectIndex: number }) => `walk_${r.rectIndex}`;
 
-  it('emits string frame lists for uniform-fps animations', () => {
+  it('emits per-frame durationMs for uniform-fps animations (v2)', () => {
     const m = buildManifest({
       atlas,
       frames,
@@ -234,11 +234,15 @@ describe('buildManifest', () => {
         },
       ],
     });
-    expect(m.animations.walk!.fps).toBe(12);
-    expect(m.animations.walk!.frames).toEqual(['walk_0', 'walk_1']);
+    expect(m.version).toBe(2);
+    // 1000/12 = 83.33 -> rounded to 83
+    expect(m.animations.walk!.frames).toEqual([
+      { name: 'walk_0', durationMs: 83 },
+      { name: 'walk_1', durationMs: 83 },
+    ]);
   });
 
-  it('emits object frame lists with durationMs for per-frame timing', () => {
+  it('emits per-frame durationMs for per-frame timing animations (v2)', () => {
     const m = buildManifest({
       atlas,
       frames,
@@ -256,7 +260,7 @@ describe('buildManifest', () => {
         },
       ],
     });
-    expect(m.animations.walk!.fps).toBeNull();
+    expect(m.version).toBe(2);
     expect(m.animations.walk!.frames).toEqual([
       { name: 'walk_0', durationMs: 100 },
       { name: 'walk_1', durationMs: 80 },

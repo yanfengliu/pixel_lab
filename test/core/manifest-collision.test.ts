@@ -13,7 +13,7 @@ describe('buildManifest duplicate animation name guard', () => {
     expect(() =>
       buildManifest({
         atlas: { image: 'atlas.png', width: 32, height: 32 },
-        frames: { f_0: { x: 0, y: 0, w: 4, h: 4 }, f_1: { x: 4, y: 0, w: 4, h: 4 } },
+        frames: { f_0: { x: 0, y: 0, width: 4, height: 4 }, f_1: { x: 4, y: 0, width: 4, height: 4 } },
         refToKey,
         animations,
       }),
