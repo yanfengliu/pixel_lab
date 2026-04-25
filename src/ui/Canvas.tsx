@@ -597,13 +597,29 @@ function PaintOverlay({
     return shiftRef.current;
   }
 
-  function handleDown(ev: React.MouseEvent) {
+  // Pointer-capture id for the in-flight drag. Stored so cleanup can
+  // releasePointerCapture if a teardown happens mid-drag (abandoned
+  // drag cleanup path). Browsers auto-release on pointerup/cancel; this
+  // ref handles the "deps changed mid-drag" path.
+  const capturedPointerIdRef = useRef<number | null>(null);
+
+  function handleDown(ev: React.PointerEvent<HTMLDivElement>) {
     // Capture the Shift modifier at drag start so the initial preview
     // reflects Shift-held-before-click (otherwise the filled variant of
     // rect/ellipse tools would only show up on the first mousemove).
     shiftRef.current = ev.shiftKey;
     const p = eventToPixel(ev.clientX, ev.clientY);
     if (!p) return;
+    // Capture this pointer so move/up events route back to this element
+    // even if the cursor leaves the viewport. Eliminates the lost-mouseup
+    // bug class without needing a `buttons === 0` workaround. jsdom
+    // doesn't always implement setPointerCapture; ignore errors.
+    try {
+      ev.currentTarget.setPointerCapture(ev.pointerId);
+      capturedPointerIdRef.current = ev.pointerId;
+    } catch {
+      capturedPointerIdRef.current = null;
+    }
 
     // Right-click on slice tool deletes the hovered manual rect.
     if (ev.button === 2 && activeTool === 'slice' && slicing.kind === 'manual') {
@@ -723,124 +739,127 @@ function PaintOverlay({
     }
   }
 
-  useEffect(() => {
-    function onMove(ev: MouseEvent) {
-      const d = dragRef.current;
-      if (!d) return;
-      // Lost-mouseup guard: if no mouse button is pressed but we still
-      // think a drag is active, the browser dropped a mouseup (typically
-      // because the cursor left the window mid-drag). Without this, the
-      // next mousemoves would keep calling stampLine from the stroke's
-      // stale lastX/lastY to the cursor, painting phantom lines across
-      // the canvas between the old drag origin and wherever the user
-      // now moves. Treat as an implicit mouseup and commit the drag.
-      if (ev.buttons === 0) {
-        onUp(ev);
+  function handleMove(ev: React.PointerEvent<HTMLDivElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    // Defense in depth: even with pointer capture in place, if no mouse
+    // button is pressed (`buttons === 0`) something has gone sideways —
+    // synthesize an up to keep state from sticking. With setPointerCapture
+    // the browser guarantees pointerup, so this should be unreachable in
+    // practice; left here in case capture failed silently (jsdom, exotic
+    // input devices, browser quirks).
+    if (ev.buttons === 0) {
+      handleUp(ev);
+      return;
+    }
+    shiftRef.current = ev.shiftKey;
+    const p = eventToPixel(ev.clientX, ev.clientY);
+    if (!p) return;
+
+    switch (d.kind) {
+      case 'brush': {
+        if (p.x === d.lastX && p.y === d.lastY) return;
+        if (d.tool === 'pencil') {
+          stampLine(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
+        } else {
+          stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSizeRef.current);
+        }
+        d.lastX = p.x;
+        d.lastY = p.y;
+        onRepaintCanvas();
         return;
       }
-      shiftRef.current = ev.shiftKey;
-      const p = eventToPixel(ev.clientX, ev.clientY);
-      if (!p) return;
-
-      switch (d.kind) {
-        case 'brush': {
-          if (p.x === d.lastX && p.y === d.lastY) return;
-          if (d.tool === 'pencil') {
-            stampLine(bitmap, d.lastX, d.lastY, p.x, p.y, d.brush);
-          } else {
-            stampEraseLine(bitmap, d.lastX, d.lastY, p.x, p.y, brushSizeRef.current);
-          }
-          d.lastX = p.x;
-          d.lastY = p.y;
-          onRepaintCanvas();
-          return;
-        }
-        case 'shape':
-          d.x1 = p.x;
-          d.y1 = p.y;
-          drawPreview();
-          return;
-        case 'marquee':
-          d.x1 = p.x;
-          d.y1 = p.y;
-          drawPreview();
-          return;
-        case 'move':
-          d.dx = p.x - d.grabX;
-          d.dy = p.y - d.grabY;
-          drawPreview();
-          return;
-        case 'slice':
-          d.x1 = p.x;
-          d.y1 = p.y;
-          drawPreview();
-          return;
-      }
-    }
-
-    function onUp(ev: MouseEvent) {
-      const d = dragRef.current;
-      if (!d) return;
-      shiftRef.current = ev.shiftKey;
-      try {
-        switch (d.kind) {
-          case 'brush':
-            d.commit();
-            return;
-          case 'shape': {
-            const effective = applyShiftModifier(d.tool, ev.shiftKey);
-            const commit = beginStroke(source.id, frameIndex);
-            const brush: Brush = {
-              size: brushSizeRef.current,
-              color: primaryRef.current,
-              opacity: opacityRef.current,
-            };
-            renderShape(effective, bitmap, d.x0, d.y0, d.x1, d.y1, brush);
-            onRepaintCanvas();
-            commit();
-            return;
-          }
-          case 'marquee': {
-            const rect = dragToRect(d.x0, d.y0, d.x1, d.y1);
-            const mask = new Uint8Array(rect.w * rect.h).fill(1);
-            setSelection({ rect, mask });
-            return;
-          }
-          case 'move': {
-            const nextRect: Rect = {
-              x: d.startRect.x + d.dx,
-              y: d.startRect.y + d.dy,
-              w: d.startRect.w,
-              h: d.startRect.h,
-            };
-            const next = pasteSelection(bitmap, nextRect.x, nextRect.y, d.pixels, d.mask);
-            bitmap.data.set(next.data);
-            onRepaintCanvas();
-            d.commit();
-            // Selection follows the moved pixels to their new location.
-            setSelection({ rect: nextRect, mask: d.mask });
-            return;
-          }
-          case 'slice': {
-            if (slicing.kind !== 'manual') return;
-            const r = dragToRect(d.x0, d.y0, d.x1, d.y1);
-            onSlicingChange({ kind: 'manual', rects: [...slicing.rects, r] });
-            return;
-          }
-        }
-      } finally {
-        dragRef.current = null;
-        clearPreview();
-        // Re-render preview to reflect any selection set in the finally.
+      case 'shape':
+        d.x1 = p.x;
+        d.y1 = p.y;
         drawPreview();
-      }
+        return;
+      case 'marquee':
+        d.x1 = p.x;
+        d.y1 = p.y;
+        drawPreview();
+        return;
+      case 'move':
+        d.dx = p.x - d.grabX;
+        d.dy = p.y - d.grabY;
+        drawPreview();
+        return;
+      case 'slice':
+        d.x1 = p.x;
+        d.y1 = p.y;
+        drawPreview();
+        return;
     }
+  }
 
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+  function handleUp(ev: React.PointerEvent<HTMLDivElement> | PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    shiftRef.current = ev.shiftKey;
+    // Browsers auto-release pointer capture on pointerup, but tracking the
+    // id lets the abandoned-drag cleanup path release explicitly.
+    capturedPointerIdRef.current = null;
+    try {
+      switch (d.kind) {
+        case 'brush':
+          d.commit();
+          return;
+        case 'shape': {
+          const effective = applyShiftModifier(d.tool, ev.shiftKey);
+          const commit = beginStroke(source.id, frameIndex);
+          const brush: Brush = {
+            size: brushSizeRef.current,
+            color: primaryRef.current,
+            opacity: opacityRef.current,
+          };
+          renderShape(effective, bitmap, d.x0, d.y0, d.x1, d.y1, brush);
+          onRepaintCanvas();
+          commit();
+          return;
+        }
+        case 'marquee': {
+          const rect = dragToRect(d.x0, d.y0, d.x1, d.y1);
+          const mask = new Uint8Array(rect.w * rect.h).fill(1);
+          setSelection({ rect, mask });
+          return;
+        }
+        case 'move': {
+          const nextRect: Rect = {
+            x: d.startRect.x + d.dx,
+            y: d.startRect.y + d.dy,
+            w: d.startRect.w,
+            h: d.startRect.h,
+          };
+          const next = pasteSelection(bitmap, nextRect.x, nextRect.y, d.pixels, d.mask);
+          bitmap.data.set(next.data);
+          onRepaintCanvas();
+          d.commit();
+          // Selection follows the moved pixels to their new location.
+          setSelection({ rect: nextRect, mask: d.mask });
+          return;
+        }
+        case 'slice': {
+          if (slicing.kind !== 'manual') return;
+          const r = dragToRect(d.x0, d.y0, d.x1, d.y1);
+          onSlicingChange({ kind: 'manual', rects: [...slicing.rects, r] });
+          return;
+        }
+      }
+    } finally {
+      dragRef.current = null;
+      clearPreview();
+      // Re-render preview to reflect any selection set in the finally.
+      drawPreview();
+    }
+  }
+
+  // Abandoned-drag cleanup. When effect deps change (tool switch via
+  // shortcut, selection change, bitmap switch, etc.) or the component
+  // unmounts mid-drag, this cleanup runs to keep state and bitmap in
+  // sync. With pointer capture in place there is no window-level
+  // listener to remove — only state-restoration work.
+  useEffect(() => {
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
       // Abandoned-drag cleanup. Any effect-dep change (tool switch,
       // selection change, bitmap switch, etc.) or unmount teardown runs
       // this path. Discriminate on drag kind:
@@ -873,6 +892,18 @@ function PaintOverlay({
       }
       dragRef.current = null;
       clearPreview();
+      // Release any pointer capture still in flight so the next drag
+      // starts cleanly. Browsers also auto-release on unmount, but doing
+      // it explicitly avoids relying on that.
+      const id = capturedPointerIdRef.current;
+      if (id !== null && rootRef.current) {
+        try {
+          rootRef.current.releasePointerCapture(id);
+        } catch {
+          // Already released or never captured.
+        }
+      }
+      capturedPointerIdRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool, bitmap, slicing, selection]);
@@ -921,8 +952,17 @@ function PaintOverlay({
       <div
         ref={rootRef}
         className="overlay paint-overlay"
-        style={{ cursor, pointerEvents: 'auto' }}
-        onMouseDown={handleDown}
+        style={{
+          cursor,
+          pointerEvents: 'auto',
+          // touch-action: none lets the user paint on touch devices
+          // without the browser interpreting the gesture as scroll/pan.
+          touchAction: 'none',
+        }}
+        onPointerDown={handleDown}
+        onPointerMove={handleMove}
+        onPointerUp={handleUp}
+        onPointerCancel={handleUp}
         onContextMenu={(e) => {
           // Suppress the browser menu only when the slice tool would
           // actually consume this right-click (hit-test matches a manual

@@ -67,28 +67,13 @@ export function Shell() {
     return () => vp.removeEventListener('wheel', onWheel);
   }, []);
 
-  useEffect(() => {
-    function onMove(e: MouseEvent) {
-      const p = panRef.current;
-      const vp = viewportRef.current;
-      if (!p || !vp) return;
-      vp.scrollLeft = p.scrollLeft - (e.clientX - p.startClientX);
-      vp.scrollTop = p.scrollTop - (e.clientY - p.startClientY);
-    }
-    function onUp(e: MouseEvent) {
-      if (e.button !== 1 && panRef.current === null) return;
-      panRef.current = null;
-      setPanning(false);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, []);
+  // Pointer capture handles the lost-mouseup case: the browser routes
+  // pointer events back to the captured viewport regardless of cursor
+  // location, so middle-button pan can't get stuck "panning" when the
+  // user releases the button outside the window.
+  const capturedPanPointerIdRef = useRef<number | null>(null);
 
-  function handleViewportMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+  function handleViewportPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 1) return;
     const vp = viewportRef.current;
     if (!vp) return;
@@ -99,7 +84,28 @@ export function Shell() {
       scrollLeft: vp.scrollLeft,
       scrollTop: vp.scrollTop,
     };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      capturedPanPointerIdRef.current = e.pointerId;
+    } catch {
+      capturedPanPointerIdRef.current = null;
+    }
     setPanning(true);
+  }
+
+  function handleViewportPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const p = panRef.current;
+    const vp = viewportRef.current;
+    if (!p || !vp) return;
+    vp.scrollLeft = p.scrollLeft - (e.clientX - p.startClientX);
+    vp.scrollTop = p.scrollTop - (e.clientY - p.startClientY);
+  }
+
+  function handleViewportPointerUp(_e: React.PointerEvent<HTMLDivElement>) {
+    if (panRef.current === null) return;
+    panRef.current = null;
+    capturedPanPointerIdRef.current = null;
+    setPanning(false);
   }
 
   const selected = selectedId
@@ -160,7 +166,10 @@ export function Shell() {
         <div
           ref={viewportRef}
           className={`canvas-viewport${panning ? ' panning' : ''}`}
-          onMouseDown={handleViewportMouseDown}
+          onPointerDown={handleViewportPointerDown}
+          onPointerMove={handleViewportPointerMove}
+          onPointerUp={handleViewportPointerUp}
+          onPointerCancel={handleViewportPointerUp}
         >
           {selected && selectedBitmap ? (
             <Canvas

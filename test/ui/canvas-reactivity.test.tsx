@@ -56,8 +56,8 @@ describe('Canvas — reactivity (I2 regression)', () => {
     );
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseUp(window);
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.pointerUp(overlay);
     const before = drawMock.mock.calls.length;
     act(() => {
       useStore.getState().undo(src.id);
@@ -81,8 +81,8 @@ describe('Canvas — reactivity (I2 regression)', () => {
     );
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseUp(window);
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.pointerUp(overlay);
     act(() => {
       useStore.getState().undo(src.id);
     });

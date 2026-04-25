@@ -56,7 +56,7 @@ describe('Canvas — I6: drag abandoned on unmount commits the stroke', () => {
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     // Start a drag (mousedown paints a pixel and starts a brush drag).
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
     // No mouseup — component unmounts mid-drag (e.g. source switched).
     unmount();
     // The delta must have been committed to undo so the user can undo
@@ -77,13 +77,13 @@ describe('Canvas — I9: dragging outside canvas bounds does not freeze', () => 
     const { bmp, container } = mountForSheet({ w: 8, h: 8 });
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
     // Move the mouse way past the right edge (off-canvas). Before I9
     // fix, eventToPixel returned null here and the preview/mouseup
     // froze the endpoint at (1,1). After the fix the line should reach
     // the right-hand edge.
-    fireEvent.mouseMove(window, { clientX: 500, clientY: 1.5 , buttons: 1});
-    fireEvent.mouseUp(window, { clientX: 500, clientY: 1.5 });
+    fireEvent.pointerMove(overlay, { clientX: 500, clientY: 1.5 , buttons: 1});
+    fireEvent.pointerUp(overlay, { clientX: 500, clientY: 1.5 });
     // The rightmost pixel on row 1 should be opaque.
     expect(bmp.data[(1 * bmp.width + (bmp.width - 1)) * 4 + 3]).toBe(255);
   });
@@ -101,8 +101,8 @@ describe('Canvas — I11: marquee rect math uses full w,h', () => {
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     // Click and release at the same pixel → 1x1 marquee.
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
-    fireEvent.mouseUp(window, { clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerUp(overlay, { clientX: 3.5, clientY: 3.5 });
     const sel = useStore.getState().selection!;
     expect(sel.sourceId).toBe(src.id);
     expect(sel.sel.rect).toEqual({ x: 3, y: 3, w: 1, h: 1 });
@@ -127,23 +127,23 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     const { src, bmp, container } = mountForSheet();
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 2.5, clientY: 2.5 });
-    fireEvent.mouseUp(window, { clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerUp(overlay, { clientX: 2.5, clientY: 2.5 });
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(255);
 
     // Marquee select the 1x1 around the painted pixel.
     act(() => {
       useStore.getState().setActiveTool('marquee');
     });
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 2.5, clientY: 2.5 });
-    fireEvent.mouseUp(window, { clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerUp(overlay, { clientX: 2.5, clientY: 2.5 });
     expect(useStore.getState().selection).not.toBeNull();
 
     // Switch to move and mousedown — cut happens.
     act(() => {
       useStore.getState().setActiveTool('move');
     });
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 2.5, clientY: 2.5 });
     // After mousedown on move, the pixel must be CUT from the bitmap.
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(0);
     return { src, bmp, overlay };
@@ -154,7 +154,7 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     // primary, or opacity — they are read via refs during mousemove/up.
     // Changing brushSize mid-move must leave the drag intact so mouseup
     // can paste the lifted pixels at the drop location.
-    const { src, bmp } = setupLiftedMove();
+    const { src, bmp, overlay } = setupLiftedMove();
     act(() => {
       useStore.getState().setBrushSize(2);
     });
@@ -163,8 +163,8 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1); // only the pencil stroke
     // Mouseup at a different pixel completes the move: original cell
     // stays cleared, new cell is painted.
-    fireEvent.mouseMove(window, { clientX: 5.5, clientY: 5.5 , buttons: 1});
-    fireEvent.mouseUp(window, { clientX: 5.5, clientY: 5.5 });
+    fireEvent.pointerMove(overlay, { clientX: 5.5, clientY: 5.5 , buttons: 1});
+    fireEvent.pointerUp(overlay, { clientX: 5.5, clientY: 5.5 });
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(0);
     expect(bmp.data[(5 * bmp.width + 5) * 4]).toBe(200);
     expect(bmp.data[(5 * bmp.width + 5) * 4 + 3]).toBe(255);
@@ -173,7 +173,7 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
   });
 
   it('mid-move color change does not tear down the drag (narrower deps)', () => {
-    const { src, bmp } = setupLiftedMove();
+    const { src, bmp, overlay } = setupLiftedMove();
     act(() => {
       useStore.getState().setPrimaryColor({ r: 0, g: 255, b: 0, a: 255 });
     });
@@ -181,20 +181,20 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(0);
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
     // Mouseup completes the move.
-    fireEvent.mouseUp(window, { clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerUp(overlay, { clientX: 2.5, clientY: 2.5 });
     // Pixel is pasted back with its original color (not the new primary).
     expect(bmp.data[(2 * bmp.width + 2) * 4]).toBe(200);
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(255);
   });
 
   it('mid-move opacity change does not tear down the drag (narrower deps)', () => {
-    const { src, bmp } = setupLiftedMove();
+    const { src, bmp, overlay } = setupLiftedMove();
     act(() => {
       useStore.getState().setOpacity(0.5);
     });
     expect(bmp.data[(2 * bmp.width + 2) * 4 + 3]).toBe(0);
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
-    fireEvent.mouseUp(window, { clientX: 2.5, clientY: 2.5 });
+    fireEvent.pointerUp(overlay, { clientX: 2.5, clientY: 2.5 });
     expect(bmp.data[(2 * bmp.width + 2) * 4]).toBe(200);
   });
 
@@ -230,15 +230,15 @@ describe('Canvas — R2-B2: abandoned move drag must not lose lifted pixels', ()
     const { src, bmp, container, unmount } = mountForSheet();
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
-    fireEvent.mouseUp(window, { clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerUp(overlay, { clientX: 3.5, clientY: 3.5 });
 
     act(() => useStore.getState().setActiveTool('marquee'));
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
-    fireEvent.mouseUp(window, { clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerUp(overlay, { clientX: 3.5, clientY: 3.5 });
 
     act(() => useStore.getState().setActiveTool('move'));
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 3.5, clientY: 3.5 });
     expect(bmp.data[(3 * bmp.width + 3) * 4 + 3]).toBe(0); // cut happened
     // Unmount mid-drag: cleanup must revert, not commit the cut.
     unmount();
@@ -303,8 +303,8 @@ describe('Canvas — R2-I12: shape preview cleared on tool switch mid-drag', () 
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
     // Start a shape drag.
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.pointerMove(overlay, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     // Reset the counter so we only count clears triggered by the switch.
     clearRectCalls.count = 0;
     // Switch tools mid-drag (simulates B/E/I/G/etc. keyboard shortcuts).
@@ -322,13 +322,13 @@ describe('Canvas — R2-I12: shape preview cleared on tool switch mid-drag', () 
     const { bmp, container } = mountForSheet();
     const overlay = container.querySelector('.paint-overlay')!;
     stubRect(overlay);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
-    fireEvent.mouseMove(window, { clientX: 4.5, clientY: 4.5 , buttons: 1});
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 1.5, clientY: 1.5 });
+    fireEvent.pointerMove(overlay, { clientX: 4.5, clientY: 4.5 , buttons: 1});
     // Switch tools; cleanup clears dragRef.
     act(() => {
       useStore.getState().setActiveTool('pencil');
     });
-    fireEvent.mouseUp(window, { clientX: 4.5, clientY: 4.5 });
+    fireEvent.pointerUp(overlay, { clientX: 4.5, clientY: 4.5 });
     // Bitmap must stay transparent — no rect pixels were written.
     for (let i = 0; i < bmp.data.length; i += 4) {
       expect(bmp.data[i + 3]).toBe(0);

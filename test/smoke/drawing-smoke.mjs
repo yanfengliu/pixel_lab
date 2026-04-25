@@ -13,9 +13,11 @@
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = join(__dirname, 'screenshots');
+await mkdir(OUT, { recursive: true });
 
 const URL = process.env.SMOKE_URL ?? 'http://127.0.0.1:5173/';
 
@@ -30,6 +32,17 @@ async function assert(cond, msg) {
   }
 }
 
+// Readiness probe — fail fast with a clear message if dev server is down.
+try {
+  const probe = await fetch(URL);
+  if (!probe.ok) throw new Error(`status ${probe.status}`);
+} catch (err) {
+  process.stderr.write(
+    `Smoke test requires the dev server. Start it first: \`npm run dev\` (then re-run \`npm run smoke\`). Probe error: ${err.message}\n`,
+  );
+  process.exit(2);
+}
+
 const browser = await chromium.launch({ headless: true });
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
 const page = await ctx.newPage();
@@ -42,7 +55,11 @@ page.on('console', (msg) => {
 });
 
 log('1', `loading ${URL}`);
-await page.goto(URL, { waitUntil: 'networkidle' });
+// `domcontentloaded` is more deterministic than `networkidle` when Vite's
+// HMR keeps a websocket open (which counts as in-flight network traffic
+// and can prevent `networkidle` from resolving promptly).
+await page.goto(URL, { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('.tool-palette', { timeout: 5000 });
 
 log('2', 'assert tool palette is rendered');
 const palette = page.locator('.tool-palette');
@@ -58,10 +75,10 @@ log('4', 'switch to Animation tab, override dims to 128x128 x 4 so zoom can over
 await page.getByLabel(/animation/i).check();
 // Find the width/height inputs and set to 128 (default is 32).
 const dialog = page.locator('[role="dialog"], .modal, .new-blank-dialog').first();
-const widthInput = dialog.getByLabel(/width/i).first();
-const heightInput = dialog.getByLabel(/height/i).first();
-await widthInput.fill('128');
-await heightInput.fill('128');
+// Tight selectors — exact match avoids future ambiguity if more
+// width/height labels appear in the dialog.
+await dialog.getByLabel('Width', { exact: true }).fill('128');
+await dialog.getByLabel('Height', { exact: true }).fill('128');
 await page.getByRole('button', { name: /^create$/i }).click();
 
 log('5', 'wait for canvas and assert source is now a sequence');
@@ -119,8 +136,11 @@ const canvasWidthBefore = await page.evaluate(() => {
   return c ? parseInt(c.style.width, 10) : -1;
 });
 await page.mouse.move(box.x + 40, box.y + 40);
-await page.mouse.wheel(0, -200); // two wheel notches up
-await page.waitForTimeout(80);
+await page.mouse.wheel(0, -100); // one wheel notch up — Shell's handler is sign-only, magnitude doesn't matter
+await page.waitForFunction((before) => {
+  const c = document.querySelector('canvas.canvas-image');
+  return c && parseInt(c.style.width, 10) > before;
+}, canvasWidthBefore, { timeout: 2000 });
 const canvasWidthAfter = await page.evaluate(() => {
   const c = document.querySelector('canvas.canvas-image');
   return c ? parseInt(c.style.width, 10) : -1;
@@ -133,7 +153,15 @@ log('11', 'middle-button pan: zoom way in first so content overflows');
 for (let i = 0; i < 12; i++) {
   await page.mouse.wheel(0, -100);
 }
-await page.waitForTimeout(80);
+// Wait until the inner canvas has actually grown beyond the viewport so
+// scroll has somewhere to go. Avoids a fixed timeout race.
+await page.waitForFunction(
+  () => {
+    const v = document.querySelector('.canvas-viewport');
+    return v && v.scrollWidth > v.clientWidth + 50;
+  },
+  { timeout: 3000 },
+);
 const vpScrollBefore = await page.evaluate(() => {
   const v = document.querySelector('.canvas-viewport');
   if (!v) return null;
@@ -148,7 +176,14 @@ await page.mouse.move(vpBox.x + 100, vpBox.y + 100);
 await page.mouse.down({ button: 'middle' });
 await page.mouse.move(vpBox.x + 30, vpBox.y + 40, { steps: 5 });
 await page.mouse.up({ button: 'middle' });
-await page.waitForTimeout(80);
+await page.waitForFunction(
+  (before) => {
+    const v = document.querySelector('.canvas-viewport');
+    return v && (v.scrollLeft !== before.left || v.scrollTop !== before.top);
+  },
+  vpScrollBefore,
+  { timeout: 2000 },
+);
 const vpScrollAfter = await page.evaluate(() => {
   const v = document.querySelector('.canvas-viewport');
   return v ? { left: v.scrollLeft, top: v.scrollTop } : null;

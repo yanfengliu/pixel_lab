@@ -176,11 +176,15 @@ describe('Shell — middle-button pan', () => {
     vp.scrollLeft = 50;
     vp.scrollTop = 20;
 
-    // React's onMouseDown handler: middle button starts the pan.
+    // Middle-button pointerdown starts the pan and captures the pointer.
+    // With pointer capture, subsequent pointermove/up route to the
+    // captured viewport regardless of cursor location — eliminating the
+    // lost-mouseup bug class for pan.
     act(() => {
       vp.dispatchEvent(
-        new MouseEvent('mousedown', {
+        new PointerEvent('pointerdown', {
           button: 1,
+          buttons: 4,
           clientX: 200,
           clientY: 100,
           bubbles: true,
@@ -190,11 +194,11 @@ describe('Shell — middle-button pan', () => {
     });
     expect(vp.classList.contains('panning')).toBe(true);
 
-    // Window-level mousemove: 30px right, 10px down — the viewport
-    // should scroll 30 left and 10 up to keep the content under cursor.
+    // Pointer-capture-routed pointermove: 30px right, 10px down — the
+    // viewport should scroll 30 left and 10 up.
     act(() => {
-      window.dispatchEvent(
-        new MouseEvent('mousemove', {
+      vp.dispatchEvent(
+        new PointerEvent('pointermove', {
           clientX: 230,
           clientY: 110,
           bubbles: true,
@@ -204,23 +208,24 @@ describe('Shell — middle-button pan', () => {
     expect(vp.scrollLeft).toBe(20);
     expect(vp.scrollTop).toBe(10);
 
-    // Window-level mouseup clears the pan state.
+    // Pointerup clears the pan state.
     act(() => {
-      window.dispatchEvent(
-        new MouseEvent('mouseup', { button: 1, bubbles: true }),
+      vp.dispatchEvent(
+        new PointerEvent('pointerup', { button: 1, bubbles: true }),
       );
     });
     expect(vp.classList.contains('panning')).toBe(false);
   });
 
-  it('left-button mousedown does NOT start a pan', () => {
+  it('left-button pointerdown does NOT start a pan', () => {
     const { container } = mountWithBlankSource();
     const vp = container.querySelector('.canvas-viewport') as HTMLDivElement;
     vp.scrollLeft = 50;
     act(() => {
       vp.dispatchEvent(
-        new MouseEvent('mousedown', {
+        new PointerEvent('pointerdown', {
           button: 0,
+          buttons: 1,
           clientX: 200,
           clientY: 100,
           bubbles: true,
@@ -230,10 +235,11 @@ describe('Shell — middle-button pan', () => {
     });
     expect(vp.classList.contains('panning')).toBe(false);
     act(() => {
-      window.dispatchEvent(
-        new MouseEvent('mousemove', {
+      vp.dispatchEvent(
+        new PointerEvent('pointermove', {
           clientX: 230,
           clientY: 100,
+          buttons: 1,
           bubbles: true,
         }),
       );
