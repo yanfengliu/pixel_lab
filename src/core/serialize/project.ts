@@ -172,17 +172,22 @@ function validateProjectJson(v: Partial<ProjectJsonAny>): void {
     if (!s.slicing || typeof s.slicing !== 'object') {
       throw new Error(`projectFromJson: source ${s.id} missing slicing`);
     }
-    // M4: a sequence source must carry pixel data — either decodable
-    // imageBase64 or a non-empty editedFrames array. Without this guard,
-    // loadProject would call decodeGif(empty) and crash inside parseGIF
-    // for files that lack both. Sheet sources are allowed to ride on
-    // editedFrames-only too (blank sheets) but their default slicing
-    // makes the validator's existing imageBase64 check fire first.
-    if ((s.kind as string) === 'sequence') {
+    // M4: a sequence-shaped source must carry pixel data — either
+    // decodable imageBase64 or a non-empty editedFrames array. Without
+    // this guard, loadProject would call decodeGif(empty) and crash
+    // inside parseGIF for files that lack both. Applies to v2
+    // `kind:'sequence'` AND v1 `kind:'gif'` (they migrate to the same
+    // sequence shape, hitting the same crash path on rehydrate). Sheet
+    // sources also need pixels but their existing imageBase64 check at
+    // line 166 already covers that.
+    const isSequenceShaped =
+      (v.version === 2 && (s.kind as string) === 'sequence') ||
+      (v.version === 1 && (s.kind as string) === 'gif');
+    if (isSequenceShaped) {
       const v2 = s as Partial<SourceJsonV2>;
       const hasEditedFrames =
-        Array.isArray(v2.editedFrames) && (v2.editedFrames!.length ?? 0) > 0;
-      const hasBytes = typeof s.imageBase64 === 'string' && s.imageBase64.length > 0;
+        Array.isArray(v2.editedFrames) && v2.editedFrames.length > 0;
+      const hasBytes = s.imageBase64.length > 0;
       if (!hasEditedFrames && !hasBytes) {
         throw new Error(
           `projectFromJson: sequence source ${s.id} has no editedFrames and no imageBase64`,

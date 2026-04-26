@@ -50,11 +50,14 @@ export function buildManifest(input: BuildManifestInput): Manifest {
 /**
  * Convert a uniform-FPS animation into per-frame durationMs, defending
  * against fps values that bypass the store's `validateFps` (e.g. tampered
- * project files loaded via `projectFromJson`). Without this guard, fps=0
- * produces Infinity, which JSON.stringify writes as `null` and breaks every
- * consumer's timing field.
+ * project files loaded via `projectFromJson`). Without this guard:
+ *  - `fps = 0` / NaN / Infinity produces Infinity → JSON.stringify writes
+ *    `null` and breaks every consumer's timing field.
+ *  - `fps` very large (e.g. 10000) produces durationMs = 0 → consumers
+ *    that loop `while (time >= frame.durationMs)` infinite-loop.
+ * Floor at 1ms so the duration is always strictly positive.
  */
 function safeDurationMs(fps: number): number {
   if (!Number.isFinite(fps) || fps <= 0) return Math.round(1000 / 12);
-  return Math.round(1000 / fps);
+  return Math.max(1, Math.round(1000 / fps));
 }

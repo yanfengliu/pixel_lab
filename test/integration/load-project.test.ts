@@ -93,6 +93,29 @@ describe('loadProject end-to-end', () => {
     expect(() => projectFromJson(invalidKind)).toThrow(/invalid kind/);
   });
 
+  it("rejects v1 'gif' source with no editedFrames AND empty imageBase64 (RC4)", () => {
+    // v1 'gif' kind migrates to v2 'sequence' on load, hitting the same
+    // decodeGif(empty) crash path. Validator must catch it before
+    // migrateV1ToV2 / loadProject runs.
+    const bad = JSON.stringify({
+      version: 1,
+      name: 'x',
+      sources: [
+        {
+          id: 'a',
+          name: 'a',
+          kind: 'gif',
+          width: 4,
+          height: 4,
+          imageBase64: '',
+          slicing: { kind: 'gif' },
+        },
+      ],
+      animations: [],
+    });
+    expect(() => projectFromJson(bad)).toThrow(/sequence/i);
+  });
+
   it('rejects a sequence source with no editedFrames AND empty imageBase64 (M4)', () => {
     // Without this guard, loadProject would call decodeGif(empty) and
     // throw inside parseGIF, taking down the whole UI rather than
