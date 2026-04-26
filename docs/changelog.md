@@ -19,7 +19,7 @@ External-facing record of changes between versions. See `docs/devlog/detailed/` 
 ### Internal
 
 - Side-effecting `useMemo` in `Canvas.tsx` removed: errors are now returned from the memo and surfaced via `useEffect`, eliminating the StrictMode "setState during render" warning.
-- Test count: 279 → 308 (review-driven regressions across the M-series and the post-review RC iteration: B1 FrameRef reconcile, M1 FPS validation at the boundary, M2 slice clamp, M3 rects refresh, M4/RC2.2 sequence + sheet completeness, M5 Drop banner, M7 brush opacity at joins, M8 Ctrl+Z mid-drag, M10 GIF reload, M11 slicing-error banner, RC1 banner contract, RC2 loadProject best-effort + fps sanitize, RC2.3 paint-after-bad-slicing, RC2.6 Open/Save/Export error banner, RC3 manifest 1ms floor, RC4 v1 'gif' validator).
+- Test count: 279 → 310 (review-driven regressions across the M-series and the four post-review RC iterations: B1 FrameRef reconcile, M1 FPS validation at the boundary, M2 slice clamp, M3 rects refresh, M4/RC2.2 sequence + sheet completeness, M5 Drop banner, M7 brush opacity at joins, M8 Ctrl+Z mid-drag, M10 GIF reload, M11 slicing-error banner, RC1 banner contract, RC2 loadProject best-effort + fps sanitize, RC2.3 paint-after-bad-slicing, RC2.6 Open/Save/Export error banner, RC3 manifest 1ms floor, RC3.1 SourcesPanel import banner, RC3.2 banner clear on Canvas unmount, RC4 v1 'gif' validator).
 - Dead CSS removed (`.rect-outline.selected`, `.rect-outline .handle`, `.row-grouping`, `.row-input`, dangling `grid-area: preview`).
 - `bash.exe.stackdump` cleaned from the working tree.
 - AGENTS.md updated for codex-cli ≥ 0.121: `--model-reasoning-effort` and `--ask-for-approval` moved into `-c` config overrides, claude `--allowedTools` documented as comma-separated.
