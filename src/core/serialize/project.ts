@@ -172,27 +172,24 @@ function validateProjectJson(v: Partial<ProjectJsonAny>): void {
     if (!s.slicing || typeof s.slicing !== 'object') {
       throw new Error(`projectFromJson: source ${s.id} missing slicing`);
     }
-    // M4: a sequence-shaped source must carry pixel data — either
-    // decodable imageBase64 or a non-empty editedFrames array. Without
-    // this guard, loadProject would call decodeGif(empty) and crash
-    // inside parseGIF for files that lack both. Applies to v2
-    // `kind:'sequence'` AND v1 `kind:'gif'` (they migrate to the same
-    // sequence shape, hitting the same crash path on rehydrate). Sheet
-    // sources also need pixels but their existing imageBase64 check at
-    // line 166 already covers that.
-    const isSequenceShaped =
-      (v.version === 2 && (s.kind as string) === 'sequence') ||
-      (v.version === 1 && (s.kind as string) === 'gif');
-    if (isSequenceShaped) {
-      const v2 = s as Partial<SourceJsonV2>;
-      const hasEditedFrames =
-        Array.isArray(v2.editedFrames) && v2.editedFrames.length > 0;
-      const hasBytes = s.imageBase64.length > 0;
-      if (!hasEditedFrames && !hasBytes) {
-        throw new Error(
-          `projectFromJson: sequence source ${s.id} has no editedFrames and no imageBase64`,
-        );
-      }
+    // M4 / RC2.2: every persistent source must carry pixel data —
+    // either decodable imageBase64 or a non-empty editedFrames array.
+    // Without this guard, loadProject reaches decodePng(empty) /
+    // decodeGif(empty) and either crashes the UI or — after the RC2
+    // best-effort prepare wrap — silently produces an empty source. The
+    // structural validator is the right place to reject this: tampered
+    // files fail with a descriptive error before any decode runs.
+    // Applies to v2 `kind:'sheet' | 'sequence'` and v1 `kind:'sheet' | 'gif'`.
+    const v2 = s as Partial<SourceJsonV2>;
+    const hasEditedFrames =
+      Array.isArray(v2.editedFrames) && v2.editedFrames.length > 0;
+    const hasBytes = s.imageBase64.length > 0;
+    if (!hasEditedFrames && !hasBytes) {
+      const kindLabel =
+        v.version === 1 && (s.kind as string) === 'gif' ? 'sequence' : (s.kind as string);
+      throw new Error(
+        `projectFromJson: ${kindLabel} source ${s.id} has no editedFrames and no imageBase64`,
+      );
     }
   }
   for (const a of v.animations) {

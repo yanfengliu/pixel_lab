@@ -93,6 +93,30 @@ describe('loadProject end-to-end', () => {
     expect(() => projectFromJson(invalidKind)).toThrow(/invalid kind/);
   });
 
+  it('rejects v2 sheet source with no editedFrames AND empty imageBase64 (RC2.2)', () => {
+    // Mirror of the sequence guard. A sheet source with empty bytes and
+    // no editedFrames would either crash decodePng or silently produce a
+    // broken source after the loadProject best-effort wrap; reject at
+    // the structural boundary so the user gets a clean message.
+    const bad = JSON.stringify({
+      version: 2,
+      name: 'x',
+      sources: [
+        {
+          id: 'a',
+          name: 'a',
+          kind: 'sheet',
+          width: 4,
+          height: 4,
+          imageBase64: '',
+          slicing: { kind: 'grid', cellW: 4, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1 },
+        },
+      ],
+      animations: [],
+    });
+    expect(() => projectFromJson(bad)).toThrow(/sheet source.*no editedFrames and no imageBase64/i);
+  });
+
   it("rejects v1 'gif' source with no editedFrames AND empty imageBase64 (RC4)", () => {
     // v1 'gif' kind migrates to v2 'sequence' on load, hitting the same
     // decodeGif(empty) crash path. Validator must catch it before
