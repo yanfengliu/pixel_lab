@@ -27,7 +27,14 @@ interface Props {
   bitmap: RawImage;
   zoom: number;
   onSlicingChange: (slicing: Slicing) => void;
-  onSliceError?: (message: string) => void;
+  /**
+   * Called whenever the slicing memo's error state changes. `null` means
+   * the current slicing produced rects without throwing; the consumer
+   * should clear any banner it had shown for a prior error. Driven by
+   * `useEffect` rather than synchronously inside render so a setState
+   * here doesn't fire during a different component's render phase.
+   */
+  onSliceError?: (message: string | null) => void;
 }
 
 /**
@@ -110,11 +117,17 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
       const msg = err instanceof Error ? err.message : String(err);
       return { rects: [], error: msg };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paintTarget, source.slicing, renderCounter]);
   const rects = sliced.rects;
+  // Surface the slice memo's current error state (null OR string) every
+  // time it changes. Reporting null too is what clears the banner when the
+  // user switches to a source with valid slicing (Gemini RC review) — the
+  // previous `if (sliced.error)` guard meant a stale error from source A
+  // never cleared when the user moved to source B. Shell's slicing-input
+  // callbacks no longer need to manually setSliceError(null); Canvas owns
+  // the banner contract end-to-end.
   useEffect(() => {
-    if (sliced.error) onSliceError?.(sliced.error);
+    onSliceError?.(sliced.error);
   }, [sliced.error, onSliceError]);
 
   // Current selection on this source+frame, if any.
@@ -909,8 +922,9 @@ function PaintOverlay({
       }
     } finally {
       setDragRef(null);
-      clearPreview();
-      // Re-render preview to reflect any selection set in the finally.
+      // drawPreview already calls ctx.clearRect first; the prior
+      // clearPreview() here was redundant (mirror of the n7 fix in
+      // handleCancel).
       drawPreview();
     }
   }

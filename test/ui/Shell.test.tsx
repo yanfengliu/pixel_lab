@@ -121,6 +121,58 @@ describe('Shell — error surfacing', () => {
     expect(container.textContent ?? '').toMatch(/cellW and cellH must be positive/);
   });
 
+  it('clears the slicing-error banner when switching to a source with valid slicing (RC1)', () => {
+    // A previous review found that the banner kept showing the old source's
+    // error after the user selected a different source. The Canvas useEffect
+    // only ever called onSliceError on a non-null error; switching to a
+    // valid source produced a null error in the memo but never propagated
+    // the clear.
+    const bad = useStore.getState().createBlankSource({
+      kind: 'sheet', name: 'bad', width: 8, height: 8,
+    });
+    const good = useStore.getState().createBlankSource({
+      kind: 'sheet', name: 'good', width: 8, height: 8,
+    });
+    useStore.getState().selectSource(bad.id);
+    const { container } = render(<Shell />);
+    act(() => {
+      useStore.getState().updateSlicing(bad.id, {
+        kind: 'grid', cellW: 0, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
+      });
+    });
+    expect(container.textContent ?? '').toMatch(/Slicing error/);
+    act(() => {
+      useStore.getState().selectSource(good.id);
+    });
+    expect(container.textContent ?? '').not.toMatch(/Slicing error/);
+  });
+
+  it('re-fires the slicing-error banner when consecutive bad configs share a message (RC1)', () => {
+    // Shell.handleSlicingChange clears sliceError before every edit. The old
+    // useEffect only depended on `sliced.error`, so two identical error
+    // strings in a row produced no second event — leaving the banner cleared
+    // even though the slicing is still invalid.
+    const src = useStore.getState().createBlankSource({
+      kind: 'sheet', name: 'sheet', width: 8, height: 8,
+    });
+    useStore.getState().selectSource(src.id);
+    const { container } = render(<Shell />);
+    act(() => {
+      useStore.getState().updateSlicing(src.id, {
+        kind: 'grid', cellW: 0, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
+      });
+    });
+    expect(container.textContent ?? '').toMatch(/Slicing error/);
+    // Same error message, different bad config. Without the fix, the banner
+    // would stay cleared after Shell's own setSliceError(null).
+    act(() => {
+      useStore.getState().updateSlicing(src.id, {
+        kind: 'grid', cellW: -1, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
+      });
+    });
+    expect(container.textContent ?? '').toMatch(/Slicing error/);
+  });
+
   it('clicking the app-error banner dismisses it (M5)', async () => {
     const { container } = render(<Shell />);
     const shell = container.querySelector('.shell') as HTMLDivElement;

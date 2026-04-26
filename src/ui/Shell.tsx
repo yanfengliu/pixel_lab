@@ -25,7 +25,13 @@ export function Shell() {
   const [dragging, setDragging] = useState(false);
   const [panning, setPanning] = useState(false);
   const [sliceError, setSliceError] = useState<string | null>(null);
-  const handleSliceError = useCallback((msg: string) => setSliceError(msg), []);
+  // Canvas owns the banner contract: it calls back with the current slice
+  // error (null when slicing is valid). We mirror that into local state
+  // verbatim — no manual clears scattered across Shell's slicing
+  // callbacks, which previously caused (a) stale errors leaking when the
+  // user switched sources and (b) consecutive identical-message errors
+  // silently vanishing because the memo's dep didn't change.
+  const handleSliceError = useCallback((msg: string | null) => setSliceError(msg), []);
   // App-level errors (Open / Drop / Save / Export). Separate from
   // sliceError so an in-flight slice retry doesn't accidentally clear an
   // unrelated import failure (M5).
@@ -213,10 +219,7 @@ export function Shell() {
               source={selected}
               bitmap={selectedBitmap}
               zoom={zoom}
-              onSlicingChange={(s) => {
-                setSliceError(null);
-                updateSlicing(selected.id, s);
-              }}
+              onSlicingChange={(s) => updateSlicing(selected.id, s)}
               onSliceError={handleSliceError}
             />
           ) : (
@@ -246,10 +249,7 @@ export function Shell() {
             source={selected}
             zoom={zoom}
             onZoomChange={setZoom}
-            onSlicingChange={(s) => {
-              setSliceError(null);
-              updateSlicing(selected.id, s);
-            }}
+            onSlicingChange={(s) => updateSlicing(selected.id, s)}
           />
         ) : null}
       </div>

@@ -19,9 +19,10 @@ function sanitizeFilenameStem(raw: string): string {
 
 interface TopBarProps {
   /**
-   * Surface async-handler failures to the parent's error banner. AbortError
-   * (user cancellation) is filtered upstream in Shell.reportAppError so we
-   * can rethrow it here without polluting the UI.
+   * Surface async-handler failures to the parent's error banner.
+   * AbortError (user cancellation) is filtered upstream in
+   * `Shell.reportAppError`, so we can pass any thrown value through to
+   * `onError` without polluting the UI.
    */
   onError?: (err: unknown) => void;
 }
