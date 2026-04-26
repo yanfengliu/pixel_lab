@@ -248,22 +248,45 @@ export const useStore = create<StoreState>((set) => ({
         // calls don't redecode.
         const bitmap = s.editedFrames?.[0] ?? decodePng(s.imageBytes);
         sheetBitmaps[s.id] = bitmap;
-        prepared[s.id] = prepareSheet(s, bitmap);
+        // Best-effort prepare, mirroring updateSlicing: a project file
+        // whose slicing the slicer refuses (cellW=0, OOB manual rects)
+        // should still load — the user fixes the config in the UI and
+        // the slice-error banner surfaces the underlying message. Without
+        // this catch, a single bad slicing field crashed loadProject and
+        // took the whole UI down.
+        try {
+          prepared[s.id] = prepareSheet(s, bitmap);
+        } catch {
+          prepared[s.id] = { sourceId: s.id, frames: [] };
+        }
       } else {
         // Sequence sources keep their original bytes in imageBytes when
         // imported from a GIF, so a saved project is self-contained:
         // re-decode via decodeGif and feed the frames to prepareSequence.
         // Blank sequences carry editedFrames-only and an empty
         // imageBytes; prepareSequence will use editedFrames in that case.
-        const decoded =
-          s.editedFrames && s.editedFrames.length > 0
-            ? []
-            : decodeGif(s.imageBytes).map((f) => f.image);
-        prepared[s.id] = prepareSequence(s, decoded);
+        try {
+          const decoded =
+            s.editedFrames && s.editedFrames.length > 0
+              ? []
+              : decodeGif(s.imageBytes).map((f) => f.image);
+          prepared[s.id] = prepareSequence(s, decoded);
+        } catch {
+          prepared[s.id] = { sourceId: s.id, frames: [] };
+        }
       }
     }
+    // Sanitize loaded animation FPS through the same boundary guard the UI
+    // input path uses. validateProjectJson catches structural issues but
+    // doesn't coerce; without this, a tampered file with fps=0 still hangs
+    // playback (setTimeout(Infinity)) and exports manifest durationMs as
+    // null.
+    const sanitizedAnimations = project.animations.map((a) => ({
+      ...a,
+      fps: validateFps(a.fps),
+    }));
     set({
-      project,
+      project: { ...project, animations: sanitizedAnimations },
       prepared,
       sheetBitmaps,
       selectedSourceId: null,
@@ -395,16 +418,24 @@ export const useStore = create<StoreState>((set) => ({
       // this they flow into buildExport and throw `no frame N in source X`.
       // Only reconcile when prepareSheet succeeded; otherwise the old
       // prepared.frames length is the right reference for "still valid".
+      // When no ref actually needs to drop (typical: user nudges cellW one
+      // digit at a time, sequence sources, or every keystroke once the
+      // count is stable), short-circuit to the same animations array so
+      // selectors keyed on animation identity don't re-render needlessly.
       const newCount = preparedSucceeded ? prepared[id]?.frames.length ?? 0 : null;
-      const animations =
-        newCount === null
-          ? s.project.animations
-          : s.project.animations.map((a) => ({
-              ...a,
-              frames: a.frames.filter(
-                (f) => f.sourceId !== id || f.rectIndex < newCount,
-              ),
-            }));
+      const needsReconcile =
+        newCount !== null &&
+        s.project.animations.some((a) =>
+          a.frames.some((f) => f.sourceId === id && f.rectIndex >= newCount),
+        );
+      const animations = needsReconcile
+        ? s.project.animations.map((a) => ({
+            ...a,
+            frames: a.frames.filter(
+              (f) => f.sourceId !== id || f.rectIndex < (newCount as number),
+            ),
+          }))
+        : s.project.animations;
       return { project: { ...s.project, sources, animations }, prepared };
     }),
 

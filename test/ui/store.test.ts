@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useStore, resetStore } from '../../src/ui/store';
 import type { DecodedImport } from '../../src/io/file';
 import { createImage, setPixel } from '../../src/core/image';
+import { encodePng } from '../../src/core/png';
 
 function mockSheetImport(): DecodedImport {
   const img = createImage(16, 16);
@@ -146,6 +147,74 @@ describe('store', () => {
     const out = useStore.getState().project.animations[0]!;
     expect(out.fps).toBe(24);
     expect(out.loop).toBe(false);
+  });
+
+  it('loadProject sanitizes loaded animation fps through validateFps (RC2)', () => {
+    // Tampered or hand-edited project files bypass setAnimationFps. Without
+    // sanitizing on the load path too, fps=0 reaches usePlayback as
+    // setTimeout(Infinity) (24-day stall) and reaches manifest export as
+    // null. Mirror the same boundary contract validateFps applies for UI
+    // input.
+    useStore.getState().loadProject({
+      version: 2,
+      name: 'tampered',
+      sources: [],
+      animations: [
+        { id: 'a', name: 'busted', fps: 0, loop: true, frames: [] },
+        { id: 'b', name: 'huge', fps: 99999, loop: true, frames: [] },
+        { id: 'c', name: 'fine', fps: 30, loop: true, frames: [] },
+        { id: 'd', name: 'each', fps: 'per-frame', loop: true, frames: [] },
+      ],
+    });
+    const out = useStore.getState().project.animations;
+    expect(out[0]!.fps).toBe(12);
+    expect(out[1]!.fps).toBe(240);
+    expect(out[2]!.fps).toBe(30);
+    expect(out[3]!.fps).toBe('per-frame');
+  });
+
+  it('loadProject keeps the source present even if its slicing rejects on prepare (RC2)', () => {
+    // A project file whose slicing the slicer refuses (e.g. cellW=0) was
+    // crashing loadProject because prepareSheet eagerly threw and the
+    // whole set() call never ran. The fix mirrors updateSlicing's
+    // best-effort behavior: store an empty prepared, let Canvas surface
+    // the error through the banner, and let the user fix the config.
+    const sheet = createImage(16, 16);
+    for (let i = 0; i < sheet.data.length; i++) sheet.data[i] = 200;
+    // Build a project with a bad grid (cellW=0). encodePng round-trip is
+    // not strictly required because loadProject's sheet branch just decodes
+    // imageBytes; we use real bytes so the sheetBitmap step succeeds.
+    const project = {
+      version: 2 as const,
+      name: 'bad-slice',
+      sources: [
+        {
+          id: 'sheet1',
+          name: 'sheet1.png',
+          kind: 'sheet' as const,
+          width: 16,
+          height: 16,
+          imageBytes: encodePng(sheet),
+          slicing: {
+            kind: 'grid' as const,
+            cellW: 0,
+            cellH: 4,
+            offsetX: 0,
+            offsetY: 0,
+            rows: 1,
+            cols: 1,
+          },
+        },
+      ],
+      animations: [],
+    };
+    expect(() => useStore.getState().loadProject(project)).not.toThrow();
+    const state = useStore.getState();
+    expect(state.project.sources).toHaveLength(1);
+    expect(state.prepared['sheet1']?.frames ?? []).toHaveLength(0);
+    // sheetBitmap is still cached so the user can fix slicing without
+    // re-importing the source.
+    expect(state.sheetBitmaps['sheet1']).toBeDefined();
   });
 
   it('setAnimationFps clamps invalid numeric input to a sane default (M1)', () => {
