@@ -126,8 +126,15 @@ export function Canvas({ source, bitmap, zoom, onSlicingChange, onSliceError }: 
   // never cleared when the user moved to source B. Shell's slicing-input
   // callbacks no longer need to manually setSliceError(null); Canvas owns
   // the banner contract end-to-end.
+  //
+  // Cleanup also clears: when the Canvas unmounts (selected source
+  // deleted, project reset via "New", etc.) there's no other path that
+  // would tell Shell to drop the stale error string (RC3.2).
   useEffect(() => {
     onSliceError?.(sliced.error);
+    return () => {
+      onSliceError?.(null);
+    };
   }, [sliced.error, onSliceError]);
 
   // Current selection on this source+frame, if any.

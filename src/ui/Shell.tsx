@@ -206,7 +206,7 @@ export function Shell() {
         <ToolPalette />
         <ColorPanel />
       </div>
-      <SourcesPanel />
+      <SourcesPanel onError={reportAppError} />
       <div className="canvas-zone">
         <div
           ref={viewportRef}

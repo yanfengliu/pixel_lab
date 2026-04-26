@@ -122,6 +122,29 @@ describe('Shell — error surfacing', () => {
     expect(container.textContent ?? '').toMatch(/cellW and cellH must be positive/);
   });
 
+  it('clears the slicing-error banner when the bad-slicing source is removed (RC3.2)', () => {
+    // The error-clear contract is "Canvas reports null when slicing
+    // becomes valid". When Canvas unmounts (source deletion, "New"
+    // project, etc.) the parent has no other signal to drop the stale
+    // banner. The effect's cleanup return now sends a null clear on
+    // unmount.
+    const src = useStore.getState().createBlankSource({
+      kind: 'sheet', name: 'bad', width: 8, height: 8,
+    });
+    useStore.getState().selectSource(src.id);
+    const { container } = render(<Shell />);
+    act(() => {
+      useStore.getState().updateSlicing(src.id, {
+        kind: 'grid', cellW: 0, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
+      });
+    });
+    expect(container.textContent ?? '').toMatch(/Slicing error/);
+    act(() => {
+      useStore.getState().removeSource(src.id);
+    });
+    expect(container.textContent ?? '').not.toMatch(/Slicing error/);
+  });
+
   it('clears the slicing-error banner when switching to a source with valid slicing (RC1)', () => {
     // A previous review found that the banner kept showing the old source's
     // error after the user selected a different source. The Canvas useEffect
@@ -178,6 +201,29 @@ describe('Shell — error surfacing', () => {
       });
     });
     expect(container.textContent ?? '').toMatch(/Slicing error/);
+  });
+
+  it('SourcesPanel + Import failure shows the app-error banner (RC3.1)', async () => {
+    // The "+ Import PNG/GIF" path used to console.error on failure with no
+    // UI feedback — the same M5 silent-failure pattern that handleDrop /
+    // handleOpen / handleSave now surface through reportAppError.
+    const spy = vi
+      .spyOn(persist, 'openBytes')
+      .mockRejectedValue(new Error('decode failed: not an image'));
+    const { container } = render(<Shell />);
+    const importBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent?.startsWith('+ Import'),
+    )!;
+    expect(importBtn).toBeDefined();
+    await act(async () => {
+      fireEvent.click(importBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.app-error')?.textContent ?? '').toMatch(
+      /decode failed/,
+    );
+    spy.mockRestore();
   });
 
   it('Open with malformed JSON shows the app-error banner (RC2.6)', async () => {

@@ -2,7 +2,18 @@ import { useStore } from './store';
 import { openBytes } from '../io/persist';
 import { decodeImport } from '../io/file';
 
-export function SourcesPanel() {
+interface SourcesPanelProps {
+  /**
+   * Surfaces import-button failures (picker rejection, unsupported file
+   * format, decode error) to the parent's appError banner. AbortError
+   * (user cancellation of the FS picker) is filtered upstream in
+   * `Shell.reportAppError`. Without this, `handleImport` previously
+   * console.error'd silently and the user got no UI feedback (RC3.1).
+   */
+  onError?: (err: unknown) => void;
+}
+
+export function SourcesPanel({ onError }: SourcesPanelProps = {}) {
   const project = useStore((s) => s.project);
   const selectedId = useStore((s) => s.selectedSourceId);
   const addSource = useStore((s) => s.addSource);
@@ -24,8 +35,7 @@ export function SourcesPanel() {
         addSource(`source-${project.sources.length + i + 1}`, imported);
       }
     } catch (err) {
-      // User cancelled or unsupported file; surface in console for now.
-      console.error(err);
+      onError?.(err);
     }
   }
 
