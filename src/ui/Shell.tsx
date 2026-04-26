@@ -163,14 +163,16 @@ export function Shell() {
     setDragging(false);
     const files = filesFromDrop(ev.nativeEvent);
     for (const file of files) {
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      // RC2.5 — file.arrayBuffer() can reject on browsers that hand back a
+      // File whose underlying handle dies between drop and read (rare but
+      // observed for OS-level drag from cloud-synced folders). Pull the
+      // read inside the try so a rejection surfaces in the banner instead
+      // of becoming an unhandled promise rejection in the React event loop.
       try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
         const imported = decodeImport(bytes);
         addSource(file.name, imported);
       } catch (err) {
-        // Surface the failure through the app-error banner so the user
-        // sees what happened. Previously this was console.error-only and
-        // a user dropping the wrong file got silent failure (M5).
         reportAppError(
           err instanceof Error
             ? new Error(`${file.name}: ${err.message}`)

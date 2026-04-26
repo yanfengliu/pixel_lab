@@ -78,6 +78,41 @@ describe('store', () => {
     expect(prepared.frames[0]!.width).toBe(4);
   });
 
+  it('beginStroke commit and undo/redo do not throw with an invalid slicing in flight (RC2.3)', () => {
+    // updateSlicing is best-effort: an in-progress invalid slicing config
+    // is recorded so the user can iterate. Subsequent paint commits and
+    // undo/redo would have called prepareSheet again and thrown on the
+    // same invalid config, undoing the M11 banner contract.
+    const src = useStore.getState().createBlankSource({
+      kind: 'sheet', name: 's', width: 8, height: 8,
+    });
+    useStore.getState().selectSource(src.id);
+    // Push a slicing the slicer rejects.
+    expect(() =>
+      useStore.getState().updateSlicing(src.id, {
+        kind: 'grid', cellW: 0, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
+      }),
+    ).not.toThrow();
+    // Simulate a stroke commit: beginStroke + commit() — the commit
+    // closure rebuilds prepared via prepareSheet and previously threw.
+    const commit = useStore.getState().beginStroke(src.id, 0);
+    // Touch the bitmap so the delta is non-empty.
+    const bmp = useStore.getState().sheetBitmaps[src.id]!;
+    bmp.data[0] = 200;
+    bmp.data[3] = 255;
+    expect(() => commit()).not.toThrow();
+    // undo / redo follow the same prepareSheet path.
+    expect(() => useStore.getState().undo(src.id)).not.toThrow();
+    expect(() => useStore.getState().redo(src.id)).not.toThrow();
+    // The bad slicing is still recorded; once the user fixes it, normal
+    // operation resumes (covered by the "valid → bad → valid" SlicerControls
+    // flow elsewhere — here we just check the no-throw invariant).
+    const stored = useStore
+      .getState()
+      .project.sources.find((s) => s.id === src.id)!.slicing;
+    expect(stored.kind).toBe('grid');
+  });
+
   it('updateSlicing drops Animation FrameRefs whose rectIndex is now out of range (B1)', () => {
     // 16x16 fully-opaque sheet so an 8x8 grid yields 4 surviving rects.
     const img = createImage(16, 16);

@@ -242,34 +242,31 @@ export const useStore = create<StoreState>((set) => ({
     const prepared: Record<Id, PreparedSource> = {};
     const sheetBitmaps: Record<Id, RawImage> = {};
     for (const s of project.sources) {
+      // Two distinct error classes here, with two different policies:
+      //   - decodePng / decodeGif failures = corrupted source bytes. Re-throw
+      //     so TopBar.handleOpen's try/catch surfaces it through the
+      //     appError banner. Silently turning these into empty sources
+      //     would tell the user "everything loaded fine" while a frame
+      //     of their work is gone (Codex RC2 round-2 finding).
+      //   - prepareSheet / prepareSequence failures = invalid slicing config
+      //     (cellW=0, OOB manual rects). Stay best-effort: store empty
+      //     prepared frames so the project loads, the user can fix the
+      //     config in SlicerControls, and Canvas surfaces the slice
+      //     message via the banner.
       if (s.kind === 'sheet') {
-        // Prefer authoritative editedFrames when present; otherwise decode
-        // the imported PNG bytes once and cache so further updateSlicing
-        // calls don't redecode.
         const bitmap = s.editedFrames?.[0] ?? decodePng(s.imageBytes);
         sheetBitmaps[s.id] = bitmap;
-        // Best-effort prepare, mirroring updateSlicing: a project file
-        // whose slicing the slicer refuses (cellW=0, OOB manual rects)
-        // should still load — the user fixes the config in the UI and
-        // the slice-error banner surfaces the underlying message. Without
-        // this catch, a single bad slicing field crashed loadProject and
-        // took the whole UI down.
         try {
           prepared[s.id] = prepareSheet(s, bitmap);
         } catch {
           prepared[s.id] = { sourceId: s.id, frames: [] };
         }
       } else {
-        // Sequence sources keep their original bytes in imageBytes when
-        // imported from a GIF, so a saved project is self-contained:
-        // re-decode via decodeGif and feed the frames to prepareSequence.
-        // Blank sequences carry editedFrames-only and an empty
-        // imageBytes; prepareSequence will use editedFrames in that case.
+        const decoded =
+          s.editedFrames && s.editedFrames.length > 0
+            ? []
+            : decodeGif(s.imageBytes).map((f) => f.image);
         try {
-          const decoded =
-            s.editedFrames && s.editedFrames.length > 0
-              ? []
-              : decodeGif(s.imageBytes).map((f) => f.image);
           prepared[s.id] = prepareSequence(s, decoded);
         } catch {
           prepared[s.id] = { sourceId: s.id, frames: [] };
@@ -691,15 +688,26 @@ export const useStore = create<StoreState>((set) => ({
       );
       // For sheets we also need to refresh prepared.frames so the new
       // pixels land in subsequent slicing operations / exports.
+      // updateSlicing is best-effort: if the user paints with an invalid
+      // slicing config in flight, prepareSheet throws on the slice() /
+      // crop() — keep the existing prepared and let the user fix the
+      // config (RC2.3). The stroke pixels still land in editedFrames via
+      // syncEditedFrames above and the renderCounter bump still fires,
+      // so the canvas redraws.
       let prepared = cur.prepared;
       if (curSource.kind === 'sheet') {
         const updatedSource = sources.find((x) => x.id === sourceId)!;
         const bitmap = cur.sheetBitmaps[sourceId];
         if (bitmap) {
-          prepared = {
-            ...prepared,
-            [sourceId]: prepareSheet(updatedSource, bitmap),
-          };
+          try {
+            prepared = {
+              ...prepared,
+              [sourceId]: prepareSheet(updatedSource, bitmap),
+            };
+          } catch {
+            // Keep `prepared[sourceId]` as-is; Canvas's slice useMemo will
+            // surface the same error through the banner.
+          }
         }
       }
       const undoStack = [...(cur.undoStacks[sourceId] ?? []), delta];
@@ -753,10 +761,17 @@ export const useStore = create<StoreState>((set) => ({
       const updatedSource = sources.find((x) => x.id === sourceId)!;
       const bitmap = cur.sheetBitmaps[sourceId];
       if (bitmap) {
-        prepared = {
-          ...prepared,
-          [sourceId]: prepareSheet(updatedSource, bitmap),
-        };
+        // RC2.3 — the source's slicing might be invalid (best-effort
+        // updateSlicing path). Skip the rebuild on throw; the existing
+        // prepared survives and Canvas's banner reflects the slice issue.
+        try {
+          prepared = {
+            ...prepared,
+            [sourceId]: prepareSheet(updatedSource, bitmap),
+          };
+        } catch {
+          // intentional: keep prior prepared
+        }
       }
     } else {
       // Replace shell to push downstream re-read.
@@ -800,10 +815,15 @@ export const useStore = create<StoreState>((set) => ({
       const updatedSource = sources.find((x) => x.id === sourceId)!;
       const bitmap = cur.sheetBitmaps[sourceId];
       if (bitmap) {
-        prepared = {
-          ...prepared,
-          [sourceId]: prepareSheet(updatedSource, bitmap),
-        };
+        // RC2.3 — same defensive wrap as undo above.
+        try {
+          prepared = {
+            ...prepared,
+            [sourceId]: prepareSheet(updatedSource, bitmap),
+          };
+        } catch {
+          // intentional: keep prior prepared
+        }
       }
     } else {
       const p = cur.prepared[sourceId];

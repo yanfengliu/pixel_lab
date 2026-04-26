@@ -154,9 +154,17 @@ function buildFrameRefs(
   // Sheet: count of rects from current slicing.
   const bitmap = sheetBitmaps[source.id];
   if (!bitmap) return [];
-  const rects =
-    source.slicing.kind === 'sequence'
-      ? []
-      : slice(bitmap, source.slicing);
+  // updateSlicing is best-effort, so source.slicing may be temporarily
+  // invalid (cellW=0, etc.) while the user iterates. Mirror Canvas's
+  // slice useMemo: catch and treat as "no rects available right now"
+  // rather than throwing through the click handler (RC2.4).
+  let rects: ReturnType<typeof slice> = [];
+  if (source.slicing.kind !== 'sequence') {
+    try {
+      rects = slice(bitmap, source.slicing);
+    } catch {
+      return [];
+    }
+  }
   return rects.map((_, i) => ({ sourceId: source.id, rectIndex: i }));
 }
