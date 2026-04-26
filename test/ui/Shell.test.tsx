@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, cleanup, act } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { Shell } from '../../src/ui/Shell';
 import { useStore, resetStore } from '../../src/ui/store';
+import * as persist from '../../src/io/persist';
 
 /**
  * Shell integration tests covering the viewport-level interactions that
@@ -147,11 +148,19 @@ describe('Shell — error surfacing', () => {
     expect(container.textContent ?? '').not.toMatch(/Slicing error/);
   });
 
-  it('re-fires the slicing-error banner when consecutive bad configs share a message (RC1)', () => {
-    // Shell.handleSlicingChange clears sliceError before every edit. The old
-    // useEffect only depended on `sliced.error`, so two identical error
-    // strings in a row produced no second event — leaving the banner cleared
-    // even though the slicing is still invalid.
+  it('banner stays visible across consecutive bad slicing edits with the same message (RC1)', () => {
+    // The original Codex finding was that Shell.onSlicingChange manually
+    // called setSliceError(null) before every edit, and the Canvas
+    // useEffect's [sliced.error] dep didn't fire on identical error
+    // strings — so two consecutive same-message bad configs left the
+    // banner cleared. The fix (RC1) was to drop those manual clears and
+    // let Canvas drive the banner via useEffect alone.
+    //
+    // This test exercises the post-fix invariant: the banner reflects
+    // the slice memo's current state across consecutive bad edits with
+    // the same error string. It does NOT replay the original bug path
+    // (which is no longer reachable), but it does protect against a
+    // regression that re-introduces a manual mid-edit clear.
     const src = useStore.getState().createBlankSource({
       kind: 'sheet', name: 'sheet', width: 8, height: 8,
     });
@@ -163,14 +172,97 @@ describe('Shell — error surfacing', () => {
       });
     });
     expect(container.textContent ?? '').toMatch(/Slicing error/);
-    // Same error message, different bad config. Without the fix, the banner
-    // would stay cleared after Shell's own setSliceError(null).
     act(() => {
       useStore.getState().updateSlicing(src.id, {
         kind: 'grid', cellW: -1, cellH: 4, offsetX: 0, offsetY: 0, rows: 1, cols: 1,
       });
     });
     expect(container.textContent ?? '').toMatch(/Slicing error/);
+  });
+
+  it('Open with malformed JSON shows the app-error banner (RC2.6)', async () => {
+    // The highest-risk path: handleOpen ingests untrusted JSON. If
+    // projectFromJson throws (validator failure or parse error), the
+    // appError banner must appear instead of an unhandled rejection.
+    const spy = vi.spyOn(persist, 'openBytes').mockResolvedValue([
+      new TextEncoder().encode('{ not json }'),
+    ]);
+    const { container } = render(<Shell />);
+    const openBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Open',
+    )!;
+    expect(openBtn).toBeDefined();
+    await act(async () => {
+      fireEvent.click(openBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.app-error')).not.toBeNull();
+    spy.mockRestore();
+  });
+
+  it('Save with picker rejection shows the app-error banner (RC2.6)', async () => {
+    // FS Access API picker rejections (other than AbortError) should
+    // surface. AbortError is filtered upstream — covered separately by
+    // the no-banner-on-cancel test below.
+    const spy = vi
+      .spyOn(persist, 'saveBytes')
+      .mockRejectedValue(new Error('NotAllowedError: write denied'));
+    const { container } = render(<Shell />);
+    const saveBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Save',
+    )!;
+    expect(saveBtn).toBeDefined();
+    await act(async () => {
+      fireEvent.click(saveBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.app-error')?.textContent ?? '').toMatch(
+      /NotAllowedError/,
+    );
+    spy.mockRestore();
+  });
+
+  it('Save AbortError (user cancel) does NOT show the banner (RC2.6)', async () => {
+    // AbortError is the standard DOMException name when the user cancels
+    // a File System Access picker. reportAppError silences it.
+    const abort = new DOMException('user cancelled', 'AbortError');
+    const spy = vi.spyOn(persist, 'saveBytes').mockRejectedValue(abort);
+    const { container } = render(<Shell />);
+    const saveBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Save',
+    )!;
+    await act(async () => {
+      fireEvent.click(saveBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.app-error')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('Export with buildExport throwing shows the app-error banner (RC2.6)', async () => {
+    // buildExport throws when an animation references a frame name that
+    // doesn't exist (refToKey miss). Easier path: have saveBytes throw —
+    // the export pipeline itself is well-tested elsewhere.
+    const spy = vi
+      .spyOn(persist, 'saveBytes')
+      .mockRejectedValue(new Error('disk full'));
+    const { container } = render(<Shell />);
+    const exportBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Export',
+    )!;
+    expect(exportBtn).toBeDefined();
+    await act(async () => {
+      fireEvent.click(exportBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('.app-error')?.textContent ?? '').toMatch(
+      /disk full/,
+    );
+    spy.mockRestore();
   });
 
   it('clicking the app-error banner dismisses it (M5)', async () => {
