@@ -46,7 +46,7 @@ Pointer: `src/ui/store.ts`, `docs/architecture/ARCHITECTURE.md`.
 ## Cache decoded sheet bitmaps; never re-decode on every slicing change — 2026-04-24
 Context: initial `updateSlicing` in the Zustand store re-decoded PNG bytes through `decodePng` every time the user tweaked cellW/cellH. That breaks tests passing mock bytes and burns CPU on every input.
 Lesson: when a derived value depends on a one-time decode, cache the decoded form alongside the source id (see `sheetBitmaps` in the store) so downstream edits re-crop without re-decoding.
-Pointer: `src/app/store.ts:sheetBitmaps`, `test/app/store.test.ts`.
+Pointer: `src/ui/store.ts:sheetBitmaps`, `test/ui/store.test.ts`.
 
 ## Keep GIF compositing pure so tests avoid fixture GIFs — 2026-04-23
 Context: unit-testing disposal modes and delay preservation for the GIF decoder needed fixtures, but hand-encoding a valid LZW-compressed GIF is tedious and brittle.

@@ -38,10 +38,9 @@ rather than the symptom.
 
 ## Verification
 - Commands run (full gate: `npx vitest run`, `npx tsc --noEmit`, `npx vite build`).
-- Browser tests if relevant: `npm run test:browser`.
+- Real-browser smoke if relevant: `npm run smoke` (requires `npm run dev` running).
 - Any new regression tests added.
 
 ## Follow-ups
-- Engine-level gaps worth flagging in `docs/engine-feedback/current.md`.
 - Lessons to persist in `docs/learning/lessons.md`.
 - Architecture implications, if any.

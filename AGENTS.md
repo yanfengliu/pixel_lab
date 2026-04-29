@@ -69,9 +69,9 @@
 
 - Read `docs/devlog/summary.md` and `docs/architecture/ARCHITECTURE.md` at session start.
 - Key directories:
-  - `src`: app code.
-  - `docs`: architecture, devlogs, reviews.
-  - `design`: app and mechanism notes.
+  - `src`: app code (`core`, `io`, `ui`, `app` layers — see ARCHITECTURE.md).
+  - `test`: unit / integration / smoke suites mirroring the `src` layout.
+  - `docs`: architecture, devlog, learning, debugging, superpowers (specs/plans).
 
 ## Architecture
 
@@ -108,4 +108,4 @@
   - Whenever you introduce a breaking change, bump `b` and reset `c`.
   - Whenever you introduce a non-breaking change, bump `c`.
 - Keep everything in `docs/` up to date when you introduce changes.
-- Maintain an external-facing `docs/changelog.md` that tracks changes between every two versions. Check `docs/devlogs` for more info.
+- Maintain an external-facing `docs/changelog.md` that tracks changes between every two versions. Check `docs/devlog/` for more info.

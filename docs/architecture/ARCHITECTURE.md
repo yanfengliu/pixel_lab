@@ -61,3 +61,9 @@ The manifest schema is exposed as a public package subpath: external consumers (
 - Visual — `ui/` golden PNG pixel diffs.
 
 See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` § Testing.
+
+## Drift Log
+
+Structural drifts noticed during audit but deferred. Per-task drift continues to live in `docs/architecture/drift-log.md`.
+
+- 2026-04-29 — `docs/changelog.md` is required by AGENTS.md "Versioning" but the file has not been created. Deferred: no released versions yet (`package.json` still on `0.1.0` pre-release), so a changelog has nothing to track until the first cut.
