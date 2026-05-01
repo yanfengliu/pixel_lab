@@ -87,9 +87,9 @@ This section is the operational implementation of the Core-rules "Multi-CLI code
 
 Read `docs/devlog/summary.md` and `docs/architecture/ARCHITECTURE.md` at session start. Key directories:
 
-- `src`: app code.
-- `docs`: architecture, devlogs, threads, API, tutorials, guides.
-- `design`: app and mechanism notes.
+- `src`: app code (`core/` pure domain, `io/` browser adapters, `ui/` React + Zustand, `app/` composition root).
+- `test`: vitest suites mirroring the `src/` layout, plus `test/integration/` and `test/smoke/` (manual Playwright).
+- `docs`: `architecture/` (ARCHITECTURE, decisions, drift-log), `devlog/` (summary + dated detailed entries), `threads/` (multi-CLI review artifacts), `learning/lessons.md`, `debugging/template.md`, `changelog.md`, and the read-only `superpowers/` reference specs.
 
 ### Discipline (mandatory; not optional)
 
@@ -104,8 +104,9 @@ Code changes are not done until the docs match. Before declaring any task comple
 
 **Always update if the change introduces or removes API surface (new exports, new methods, new types, removed APIs, renamed APIs):**
 
-- `docs/api-reference.md` — every new public type, method, and standalone utility gets its own section. Removed APIs get removed (not just struck through). Stale signatures must be updated.
-- `README.md` — Feature Overview table mentions the new capability if it's a user-visible feature; Public Surface bullets list the new top-level export if applicable.
+- `src/core/index.ts` — the canonical re-export barrel for the `core` public surface; keep it in lockstep with what consumers import. The `pixel_lab/manifest` subpath (`src/core/serialize/manifest-types.ts`) is the external-consumer contract — bumping it is a breaking change.
+- `README.md` — the Basic workflow / Keyboard shortcuts / Canvas controls sections mention any user-visible capability changes.
+- `docs/changelog.md` — call out the new or removed API in the version entry's Breaking / Added / Removed section.
 
 **Always update if the change is structural (new subsystem, new boundary, changed data flow):**
 
@@ -115,10 +116,10 @@ Code changes are not done until the docs match. Before declaring any task comple
 
 **Verification step (mandatory before declaring task done):**
 
-- Invoke the `doc-review` skill or grep for removed-API names across `docs/` and `README.md`. The audit must come back clean for the change's diff. Stale references in historical changelog / devlog / drift-log entries are intentional context and should remain — every other surface must reflect current reality.
+- Grep for removed-API names across `docs/` and `README.md` and the `src/core/index.ts` barrel. The audit must come back clean for the change's diff. Stale references in historical changelog / devlog / drift-log / threads entries are intentional context and should remain — every other surface must reflect current reality.
 - The multi-CLI code review must explicitly verify doc accuracy as part of its review prompt — include "verify docs in the diff match implementation; flag any stale signatures, removed APIs still mentioned, or missing coverage of new APIs in canonical guides."
 
-**Why this is mandatory:** doc drift compounds. A single stale signature in `api-reference.md` becomes the source of truth for the next reader, then for the next feature built on top, then for an external consumer. Treating documentation as part of the change (not after the change) is the only way to keep the surface trustworthy.
+**Why this is mandatory:** doc drift compounds. A single stale signature in ARCHITECTURE.md or the README becomes the source of truth for the next reader, then for the next feature built on top, then for an external consumer. Treating documentation as part of the change (not after the change) is the only way to keep the surface trustworthy.
 
 ### Architecture
 

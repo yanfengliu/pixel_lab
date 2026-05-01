@@ -37,11 +37,10 @@ What changed, which files, and why this specific fix addresses the root cause
 rather than the symptom.
 
 ## Verification
-- Commands run (full gate: `npx vitest run`, `npx tsc --noEmit`, `npx vite build`).
-- Browser tests if relevant: `npm run test:browser`.
+- Commands run (full gate: `npm test`, `npm run typecheck`, `npm run build`).
+- Manual browser smoke if the bug touches the drawing flow: `npm run dev` in one terminal, then `npm run smoke` (Playwright; expects the dev server at 127.0.0.1:5173).
 - Any new regression tests added.
 
 ## Follow-ups
-- Engine-level gaps worth flagging in `docs/engine-feedback/current.md`.
 - Lessons to persist in `docs/learning/lessons.md`.
-- Architecture implications, if any.
+- Architecture implications, if any (update `docs/architecture/ARCHITECTURE.md` and append to `docs/architecture/drift-log.md`).

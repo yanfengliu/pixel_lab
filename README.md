@@ -67,7 +67,7 @@ The same flow works for any source: imported PNG sheets sliced via grid/auto/man
 
 ## Keyboard shortcuts
 
-Drawing tools follow Aseprite conventions. Shortcuts are bare keys (no modifiers) and are suppressed while focus is in a text input.
+Drawing tools follow Aseprite conventions. Shortcuts are bare keys (no modifiers) and are suppressed while focus is in a text input. The full palette also includes ellipse outline / ellipse filled / rectangle filled tools (palette click only — no bare-key shortcut). Holding Shift on mouseup of a rectangle-outline or ellipse-outline drag rasterizes the filled variant without changing the active tool.
 
 | Key | Action |
 |---|---|
@@ -76,7 +76,7 @@ Drawing tools follow Aseprite conventions. Shortcuts are bare keys (no modifiers
 | `I` | Eyedropper |
 | `G` | Bucket fill |
 | `L` | Line |
-| `U` | Rectangle outline |
+| `U` | Rectangle outline (also has a filled variant in the palette; no bare-key shortcut) |
 | `M` | Marquee select |
 | `V` | Move |
 | `S` | Slice rect (only when slicing mode is Manual) |
