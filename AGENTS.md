@@ -10,6 +10,11 @@
 - For each desired change, make the change easy, then make the easy change.
 - Before implementing a change, write a plan.
 - Verify every change against this project's gates: `npm test`, `npm run typecheck`, `npm run build`. All three must pass before declaring a task done.
+- **Dependency-change protocol (mandatory whenever you touch `package.json`'s dependency surface):**
+  1. Re-resolve the lockfile: `npm install` (commits `package-lock.json`).
+  2. Run `npm audit --audit-level=high --omit=dev` and `npm audit --audit-level=high`. A new HIGH/CRITICAL CVE is a blocker — upgrade past it, swap the dep, or document the suppression in the devlog with a reason and expiry date.
+  3. Mention the audit result in the commit message.
+  Skipping any step is a process regression — supply-chain risk compounds silently.
 - **Multi-CLI code review is mandatory for every behavior or code change before declaring the task done.** Run Codex + Gemini + Claude per the Code review section, synthesize their findings into `docs/threads/current/<objective>/<date>/<iteration_number>/REVIEW.md`, address every real finding, and re-review until reviewers nitpick instead of catching real bugs. Move the thread to `docs/threads/done/<objective>/` when the task is closed. This applies to all changes — single-file fixes, doc-only edits with code implications, refactors, and big features alike. Do not rationalize your way out of review with phrases like "single-file behavior fix," "trivial change," "TDD coverage is sufficient," "subagent dispatch is a tool not a mandate," or any equivalent. The Code review section is non-negotiable; the Team-of-subagents flexibility clause does NOT cover the multi-CLI review step. Skipping review is a process regression and must be corrected by running the review post-hoc on the same branch before merge.
 - When the change is visual:
   - Capture a before screenshot.
