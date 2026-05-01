@@ -76,6 +76,10 @@ Operational details for the multi-CLI review rule above.
 - **Keep model IDs current.** Bump these strings whenever a more capable variant ships (e.g. `claude-opus-5-0[1m]`, `gpt-5.6`). Verify with a one-line smoke test (`echo "ok" | <cli> ...`) before committing the bump — silent fallback to an older model is the failure mode to guard against.
 - For full-codebase reviews (no diff), drop the `git diff` pipe and let each CLI agentically explore the workspace from its CWD; keep the same model/effort flags.
 - **Diff reviews take ~5 minutes per CLI on a multi-hundred-line diff.** Run them in parallel with `run_in_background: true`. Wait via a single background `until` poller (`until [ -s codex.txt ] && [ -s claude.txt ] && [ -s gemini.txt ]; do sleep 8; done`) so the harness's no-long-sleeps guard doesn't fire and you don't poll repeatedly.
+- **Reading codex review output efficiently.** Codex's `tmp/review-runs/.../codex.txt` echoes the entire piped stdin (the diff or spec content) plus exec-sandbox chatter, then prints the actual review TWICE near the end. A naive Read of the whole file burns 30K-100K tokens of repeated content.
+  - **Primary approach — make Codex bracket its review with markers.** Add the following sentence to every Codex review prompt: `Begin your review with the literal token "===BEGIN-REVIEW===" on its own line and end with "===END-REVIEW===" on its own line. Do not emit those markers anywhere else in your output.` Then extract with `awk '/===BEGIN-REVIEW===/{p=1; next} /===END-REVIEW===/{exit} p' codex.txt`.
+  - **Fallback when markers are missing**: `wc -l codex.txt`, then `Read` with `offset = lines - 250` for the last ~250 lines. Or `sed -n '/<\/stdin>/,$p' codex.txt | head -300`.
+  - Gemini and Claude outputs are clean — read those normally; markers are optional but harmless if you include them in all three prompts for consistency.
 - **If a CLI is unreachable** (quota exhaustion, model name rejected by harness), proceed with the remaining reviewers and note the unreachable CLI in the devlog. Two converging reviews are still useful signal — do not block the workflow on a third.
 
 ## Git
