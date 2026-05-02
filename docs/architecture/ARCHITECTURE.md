@@ -61,3 +61,15 @@ The manifest schema is exposed as a public package subpath: external consumers (
 - Visual — `ui/` golden PNG pixel diffs.
 
 See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` § Testing.
+
+## Drift Log
+
+Structural drift detected during a doc-audit pass that is out of scope to fix in
+the same pass. Each row should either be repaid or migrated to
+`docs/architecture/drift-log.md` with a remediation plan. Per-KAD drift (data
+model, manifest schema, store layer placement) lives in `drift-log.md`.
+
+| Date | What drifted | Why it's recorded here |
+|------|--------------|------------------------|
+| 2026-05-02 | `src/ui/Canvas.tsx` is 1146 LOC; `src/ui/store.ts` is 929 LOC. AGENTS.md § Code review caps individual files at 500 LOC. | Known follow-up M9 in `docs/devlog/summary.md`. Refactor is its own task — fixing it requires splitting Canvas (drag handlers, render layers, slicing overlay) and store (drawing slice vs. project slice) along stable seams, not a rename. |
+| 2026-05-02 | `docs/devlog/detailed/2026-04-23_2026-04-25.md` is 463 lines (cap is 500). Approaching the archive trigger documented in AGENTS.md § Devlog. | Will need a `git mv` to update its `END_DATE` and a fresh active file before the next devlog entry. |

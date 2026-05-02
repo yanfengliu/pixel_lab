@@ -4,7 +4,7 @@
 
 ## Current state
 
-0.2.1 in progress on `agent/full-review-iter1-fixes`: full-repo review iteration 1 complete (1 BLOCKER, 11 MAJOR, 23 MINOR, 19 NIT in `docs/reviews/full/2026-04-25/1/REVIEW.md`); fix cluster landed. Manifest v2 from 0.2.0 unchanged. 296/296 tests pass, `npx tsc --noEmit` clean.
+0.2.1 shipped on `main`: full-repo review iteration 1 complete (1 BLOCKER, 11 MAJOR, 23 MINOR, 19 NIT in `docs/threads/done/full/2026-04-25/1/REVIEW.md`); fix cluster landed. Manifest v2 from 0.2.0 unchanged. 310 tests pass, `npm run typecheck` clean.
 
 ## What exists
 
@@ -15,7 +15,7 @@
 - KADs 001–008 (005 added MaxRects padding; 006 renamed `kind:'gif'` to `'sequence'`; 007 added `editedFrames` alongside `imageBytes`; 008 bumped manifest to v2 schema). Drift-log has 4 rows.
 - Detailed devlog: `docs/devlog/detailed/2026-04-23_2026-04-25.md`.
 - Lessons: `docs/learning/lessons.md` (added 4 entries from the iter-1 review).
-- Reviews: `docs/reviews/full/2026-04-25/1/` (raw outputs + synthesized REVIEW.md).
+- Threads: `docs/threads/done/full/2026-04-25/1/` (raw outputs + synthesized REVIEW.md; legacy `docs/reviews/` tree was renamed to `docs/threads/`).
 
 ## Known follow-ups
 
