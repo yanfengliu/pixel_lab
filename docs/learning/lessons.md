@@ -16,7 +16,7 @@ Pointer: devlog entry, file, or test that illustrates it.
 ## Documented invariants must be enforced at the state boundary, not at the consumer — 2026-04-25
 Context: re-slicing a source could leave animation `FrameRef`s pointing past the new prepared-frames count. ARCHITECTURE.md / KAD-004 promised "re-slicing updates every animation that references that source," but the runtime relied on convention. Three of four reviewers in the full-repo audit independently flagged the same pattern across `FrameRef` integrity, FPS validation, and `loadProject` sequence completeness.
 Lesson: when a contract is documented as a load-bearing invariant, encode it next to the mutation that could break it. Store actions that touch multi-entity state should run validation at the action site, not push the burden onto every downstream reader to defend itself. If you find yourself writing "the user shouldn't get into this state" in a comment, validate at the boundary instead.
-Pointer: `src/ui/store.ts:updateSlicing` (FrameRef reconcile + best-effort prepareSheet), `src/core/serialize/project.ts:validateProjectJson` (sequence-source completeness), `src/ui/store.ts:validateFps` (FPS clamp), `docs/reviews/full/2026-04-25/1/REVIEW.md`.
+Pointer: `src/ui/store.ts:updateSlicing` (FrameRef reconcile + best-effort prepareSheet), `src/core/serialize/project.ts:validateProjectJson` (sequence-source completeness), `src/ui/store.ts:validateFps` (FPS clamp), `docs/threads/done/full/2026-04-25/1/REVIEW.md`.
 
 ## `useMemo` that depends on an in-place-mutated buffer needs a render counter in its deps — 2026-04-25
 Context: the rects-overlay `useMemo` in `Canvas.tsx` keyed on `[paintTarget, source.slicing, onSliceError]`. For a sheet, `paintTarget === bitmap === sheetBitmaps[id]` — its reference is stable across paint mutations. Painting into a previously-empty grid cell never refreshed the rects overlay because the memo never re-ran. This is the exact mirror of the earlier "in-place mutations need an explicit render signal" lesson, which solved it for `useEffect` but not for `useMemo`.
@@ -66,7 +66,7 @@ Pointer: `src/ui/store.ts`, `docs/architecture/ARCHITECTURE.md`.
 ## Cache decoded sheet bitmaps; never re-decode on every slicing change — 2026-04-24
 Context: initial `updateSlicing` in the Zustand store re-decoded PNG bytes through `decodePng` every time the user tweaked cellW/cellH. That breaks tests passing mock bytes and burns CPU on every input.
 Lesson: when a derived value depends on a one-time decode, cache the decoded form alongside the source id (see `sheetBitmaps` in the store) so downstream edits re-crop without re-decoding.
-Pointer: `src/app/store.ts:sheetBitmaps`, `test/app/store.test.ts`.
+Pointer: `src/ui/store.ts:sheetBitmaps`, `test/ui/store.test.ts`.
 
 ## Keep GIF compositing pure so tests avoid fixture GIFs — 2026-04-23
 Context: unit-testing disposal modes and delay preservation for the GIF decoder needed fixtures, but hand-encoding a valid LZW-compressed GIF is tedious and brittle.
