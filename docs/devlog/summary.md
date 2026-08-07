@@ -2,6 +2,10 @@
 
 **Last updated:** 2026-04-25
 
+## Sessions
+
+- 2026-08-07: Lessons split into a 26-line index and `docs/learning/lessons-evidence.md` (12 entries, verbatim). The entry titles were already claim-shaped, so index lines are those titles with their trailing dates stripped — no paraphrasing, so nothing can drift from what the evidence says. `test/lessons-pairing.test.ts` pins both directions plus its own non-vacuity; suite green at 40 files / 314 tests. Note for a later session: this file is a status document, which the canon says a devlog must not be — it is history, not status.
+
 ## Current state
 
 0.2.1 in progress on `agent/full-review-iter1-fixes`: full-repo review iteration 1 complete (1 BLOCKER, 11 MAJOR, 23 MINOR, 19 NIT in `docs/reviews/full/2026-04-25/1/REVIEW.md`); fix cluster landed. Manifest v2 from 0.2.0 unchanged. 296/296 tests pass, `npx tsc --noEmit` clean.

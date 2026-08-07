@@ -1,74 +1,24 @@
-# Lessons learned
+# Lessons
 
-Append durable engineering lessons here. Each entry should teach a future agent something that is not obvious from the current code — a trap, a non-obvious invariant, or a rule that keeps biting if ignored. One entry per lesson, newest at the top. Keep entries short; link to code or devlog rather than restating.
+The one-line form of every lesson this repo has paid for. Read this file at session start; it is short by construction.
 
-Format:
+Each rule links into [lessons-evidence.md](lessons-evidence.md), which holds the context, the durable rule, and the pointer to the code or test. Open that only when a rule is in doubt, or the work is in that area — it is not session-start reading.
 
-```
-## <short title> — YYYY-MM-DD
-Context: when this came up.
-Lesson: the durable rule or trap, phrased so it transfers to future work.
-Pointer: devlog entry, file, or test that illustrates it.
-```
+A new lesson is an entry there plus one line here. `test/lessons-pairing.test.ts` keeps the two in step: a rule always has an entry, and an entry always has a rule.
 
----
+When a lesson becomes a gate — a test, a lint rule, a fixed command — delete both halves. The machine enforces it, so nobody needs to read it.
 
-## Documented invariants must be enforced at the state boundary, not at the consumer — 2026-04-25
-Context: re-slicing a source could leave animation `FrameRef`s pointing past the new prepared-frames count. ARCHITECTURE.md / KAD-004 promised "re-slicing updates every animation that references that source," but the runtime relied on convention. Three of four reviewers in the full-repo audit independently flagged the same pattern across `FrameRef` integrity, FPS validation, and `loadProject` sequence completeness.
-Lesson: when a contract is documented as a load-bearing invariant, encode it next to the mutation that could break it. Store actions that touch multi-entity state should run validation at the action site, not push the burden onto every downstream reader to defend itself. If you find yourself writing "the user shouldn't get into this state" in a comment, validate at the boundary instead.
-Pointer: `src/ui/store.ts:updateSlicing` (FrameRef reconcile + best-effort prepareSheet), `src/core/serialize/project.ts:validateProjectJson` (sequence-source completeness), `src/ui/store.ts:validateFps` (FPS clamp), `docs/reviews/full/2026-04-25/1/REVIEW.md`.
+## Rules
 
-## `useMemo` that depends on an in-place-mutated buffer needs a render counter in its deps — 2026-04-25
-Context: the rects-overlay `useMemo` in `Canvas.tsx` keyed on `[paintTarget, source.slicing, onSliceError]`. For a sheet, `paintTarget === bitmap === sheetBitmaps[id]` — its reference is stable across paint mutations. Painting into a previously-empty grid cell never refreshed the rects overlay because the memo never re-ran. This is the exact mirror of the earlier "in-place mutations need an explicit render signal" lesson, which solved it for `useEffect` but not for `useMemo`.
-Lesson: the `renderCounter` rule applies to every reactive primitive that consumes a mutable buffer, not just `useEffect`. If a `useMemo`, `useCallback`, or selector reads pixel data, include the per-source counter in its deps. If the memo also produces an error, return it as a value — don't fire `setState` from inside the factory; that breaks under StrictMode and runs in render.
-Pointer: `src/ui/Canvas.tsx` rects useMemo, `test/ui/Canvas.test.tsx` (M3 regression test).
-
-## Chained `stampLine` calls double-composite the join when opacity < 1 — use a start-excluded variant — 2026-04-25
-Context: each mousemove's `stampLine(lastX, lastY, x, y)` started by re-painting `(lastX, lastY)`, which had already been painted by the previous segment (or by the mousedown stamp). Source-over with opacity < 1 isn't idempotent, so the join compounded every segment.
-Lesson: when a Bresenham walk is chained across segments, the start pixel of each non-first segment is the end of the previous one. Pass an `includeStart=false` flag (or expose a `stampLineFrom` variant) so the join is composited exactly once across the whole drag. Mousedown still places the first dot via `stampDot`. Eraser writes 0,0,0,0 — idempotent — so the same shape isn't required there but using the variant for symmetry doesn't hurt.
-Pointer: `src/core/drawing/brush.ts:stampLineFrom`, `src/core/drawing/brush.ts:walkLine` (`includeStart` param), `test/core/drawing/brush.test.ts` (M7 chained-segment opacity test).
-
-## Mid-drag global shortcuts must guard on a drag flag — 2026-04-25
-Context: `ToolPalette`'s window keydown handler fired `undo()` / `redo()` immediately on Ctrl+Z, regardless of whether a Canvas drag was in flight. Mid-drag undo mutated the paint target underneath the running stroke; the drag's `commit()` then ran `computeDelta(before, after)` against a corrupted "after" and recorded the union of the abandoned undo + the in-flight stroke as a single delta — silent data corruption.
-Lesson: any global shortcut that mutates state managed by an in-flight gesture (drag, multi-frame edit, async save) needs a guard at the action site. Adding a session-only `isDragging` flag to the store and checking it inside `undo` / `redo` is more robust than guarding the keymap, because it covers programmatic undo too. Keep the flag in lockstep with the drag-state ref by funneling all writes through one helper.
-Pointer: `src/ui/store.ts` (`isDragging`, undo/redo guards), `src/ui/Canvas.tsx:setDragRef`, `test/ui/Canvas.test.tsx` (M8 regression test).
-
-## Browsers drop mouseup when the cursor leaves the window — guard onMove with ev.buttons === 0 — 2026-04-24
-Context: pencil-tool clicks occasionally drew long phantom diagonal lines across the canvas. Root cause: when the user's cursor left the browser window with the mouse button held, the subsequent mouseup on window was dropped. The next time the cursor re-entered the window (without a button press), the in-flight drag state still pointed at the stroke's lastX/lastY, so every onMove kept calling stampLine to the cursor — painting a line from the original click to wherever the cursor now was.
-Lesson: any window-level mousemove listener that acts on drag state needs a `if (ev.buttons === 0) { synthesizeUp(); return; }` guard, because the browser does NOT guarantee mouseup delivery when the cursor leaves the window. The cleanest alternative is pointer events with `setPointerCapture`, which routes all pointer events (including up) back to the captured element regardless of cursor position — consider that for future drag-heavy features. Tests that fire mousemove events via `fireEvent.mouseMove` must include `buttons: 1` or they'll model "lost mouseup" instead of a normal drag.
-Pointer: `src/ui/Canvas.tsx` (onMove guard), `test/ui/Canvas.test.tsx` (lost-mouseup regression test).
-
-## jsdom + fireEvent bypasses z-order, so visual layout bugs look green — 2026-04-24
-Context: `canvas.canvas-image` was rendered with `position: relative; z-index: 1` and default `pointer-events: auto`. In a real browser it was the topmost hit target over the sibling `.paint-overlay` div, so all mouse events were absorbed by the (handler-less) canvas and no drawing happened. 266 unit tests passed because `fireEvent.mouseDown(overlay, ...)` dispatches directly on the overlay element — no hit test, no z-order — so the test harness couldn't see the bug. Caught by the first real-browser Playwright smoke test, after the branch was already merged.
-Lesson: unit tests that synthesize DOM events against a specific element are blind to z-order / pointer-events / CSS stacking bugs. If a feature depends on clicks reaching a particular layer, add a Playwright (or equivalent) smoke test that lets the browser do hit testing, OR add a unit test that asserts the pointer-events / z-index invariants directly. And: any `<canvas>` or other element that is purely visual must carry `pointer-events: none`, not rely on default `auto`.
-Pointer: `src/ui/Canvas.tsx` (`canvas.canvas-image` style), `test/ui/Canvas.test.tsx` (new `canvas-image does not capture mouse events` regression), `test/smoke/drawing-smoke.mjs`.
-
-## Serialized state must be refreshed on every mutation, not just the first — 2026-04-24
-Context: `Source.editedFrames` was the only serialized per-source pixel buffer, but the store only materialized it on the first stroke and then silently diverged from the live `sheetBitmaps[id]` / `prepared.frames[i]` on every subsequent paint. Save/reload dropped strokes 2..N; sheet exports showed stale pixels on any re-slice.
-Lesson: if a buffer is both "the authoritative serialization source" and "the thing the user edits through a different handle," keep them in sync on every commit — don't rely on first-edit materialization plus implicit aliasing. Explicit `syncEditedFrames(target)` on stroke commit, undo, and redo removes the whole class of bug and is trivial to test.
-Pointer: `src/ui/store.ts:syncEditedFrames`, `test/integration/save-reload.test.ts`.
-
-## In-place mutations need an explicit render signal for React — 2026-04-24
-Context: Canvas, OnionSkinLayer, and frame thumbnails all painted their DOM canvases inside `useEffect(..., [img])`. Strokes mutate `img.data` in place, so the `img` identity never changes, so the effect never fires — undo/redo left the canvas stuck on the pre-op pixels until an unrelated re-render refreshed it.
-Lesson: for any React effect that consumes a mutable buffer, include a monotonic counter in the deps that bumps on every in-place mutation. The counter lives in the store where the mutation happens and can be wired through props to child canvases. Don't rely on reference equality for a buffer whose whole point is mutation.
-Pointer: `src/ui/store.ts:renderCounters`, `test/ui/canvas-reactivity.test.tsx`.
-
-## Node `Buffer` is not polyfilled by Vite; pngjs/browser needs the `buffer` shim — 2026-04-24
-Context: `src/core/png.ts` used `Buffer.from(...)` directly. This runs fine under vitest (Node) but throws `ReferenceError: Buffer is not defined` in the Vite production bundle. The tests never caught it because they never exercised the browser path.
-Lesson: any code that runs in both Node and the browser must source `Buffer` from the `buffer` npm package (not Node's global). Always smoke-check the production bundle for `"Buffer is not defined"` literals if you touch encoder/decoder code.
-Pointer: `src/core/png.ts`, `docs/architecture/drift-log.md` (2026-04-24 row).
-
-## Don't put a global state store in `app/` if UI imports from it — 2026-04-24
-Context: the Zustand store initially lived at `src/app/store.ts`. Every UI component imported it, which reversed the documented `app → ui → io → core` arrow: `ui → app`. This was flagged by three independent reviewers in the first review pass.
-Lesson: a Zustand/Redux/etc. store that UI components call is structurally a UI concern. Put it under `ui/` so UI imports stay within the same layer, and keep `app/` as a composition root with zero state ownership.
-Pointer: `src/ui/store.ts`, `docs/architecture/ARCHITECTURE.md`.
-
-## Cache decoded sheet bitmaps; never re-decode on every slicing change — 2026-04-24
-Context: initial `updateSlicing` in the Zustand store re-decoded PNG bytes through `decodePng` every time the user tweaked cellW/cellH. That breaks tests passing mock bytes and burns CPU on every input.
-Lesson: when a derived value depends on a one-time decode, cache the decoded form alongside the source id (see `sheetBitmaps` in the store) so downstream edits re-crop without re-decoding.
-Pointer: `src/app/store.ts:sheetBitmaps`, `test/app/store.test.ts`.
-
-## Keep GIF compositing pure so tests avoid fixture GIFs — 2026-04-23
-Context: unit-testing disposal modes and delay preservation for the GIF decoder needed fixtures, but hand-encoding a valid LZW-compressed GIF is tedious and brittle.
-Lesson: extract the compositing logic into a pure function over a small patch struct (width, height, delay, disposal) and let the thin `decodeGif` glue `gifuct-js` onto it. Disposal/delay tests then need no real GIF bytes.
-Pointer: `src/core/gif.ts` — `compositeGifFrames`; `test/core/gif.test.ts`.
+- Documented invariants must be enforced at the state boundary, not at the consumer ([evidence](lessons-evidence.md#documented-invariants-must-be-enforced-at-the-state-boundary-not-at-the-consumer--2026-04-25))
+- `useMemo` that depends on an in-place-mutated buffer needs a render counter in its deps ([evidence](lessons-evidence.md#usememo-that-depends-on-an-in-place-mutated-buffer-needs-a-render-counter-in-its-deps--2026-04-25))
+- Chained `stampLine` calls double-composite the join when opacity < 1 — use a start-excluded variant ([evidence](lessons-evidence.md#chained-stampline-calls-double-composite-the-join-when-opacity--1--use-a-start-excluded-variant--2026-04-25))
+- Mid-drag global shortcuts must guard on a drag flag ([evidence](lessons-evidence.md#mid-drag-global-shortcuts-must-guard-on-a-drag-flag--2026-04-25))
+- Browsers drop mouseup when the cursor leaves the window — guard onMove with ev.buttons === 0 ([evidence](lessons-evidence.md#browsers-drop-mouseup-when-the-cursor-leaves-the-window--guard-onmove-with-evbuttons--0--2026-04-24))
+- jsdom + fireEvent bypasses z-order, so visual layout bugs look green ([evidence](lessons-evidence.md#jsdom--fireevent-bypasses-z-order-so-visual-layout-bugs-look-green--2026-04-24))
+- Serialized state must be refreshed on every mutation, not just the first ([evidence](lessons-evidence.md#serialized-state-must-be-refreshed-on-every-mutation-not-just-the-first--2026-04-24))
+- In-place mutations need an explicit render signal for React ([evidence](lessons-evidence.md#in-place-mutations-need-an-explicit-render-signal-for-react--2026-04-24))
+- Node `Buffer` is not polyfilled by Vite; pngjs/browser needs the `buffer` shim ([evidence](lessons-evidence.md#node-buffer-is-not-polyfilled-by-vite-pngjsbrowser-needs-the-buffer-shim--2026-04-24))
+- Don't put a global state store in `app/` if UI imports from it ([evidence](lessons-evidence.md#dont-put-a-global-state-store-in-app-if-ui-imports-from-it--2026-04-24))
+- Cache decoded sheet bitmaps; never re-decode on every slicing change ([evidence](lessons-evidence.md#cache-decoded-sheet-bitmaps-never-re-decode-on-every-slicing-change--2026-04-24))
+- Keep GIF compositing pure so tests avoid fixture GIFs ([evidence](lessons-evidence.md#keep-gif-compositing-pure-so-tests-avoid-fixture-gifs--2026-04-23))
