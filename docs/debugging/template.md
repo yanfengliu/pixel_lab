@@ -5,6 +5,8 @@ debugging session. Iterate on it as you investigate. Write learnings into
 `docs/learning/lessons.md` when the session is resolved. Clean up any dump files
 created during the session, but keep this `.md` file.
 
+If a later session proves one of these conclusions wrong, correct the old file instead of leaving it standing — a closed debugging doc reads as settled, so a stale one costs the next session the same hours it cost you.
+
 ## Symptom
 What the user or a test is observing. Include the exact error message, fixture
 seed, command, or steps to reproduce.

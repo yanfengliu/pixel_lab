@@ -41,11 +41,6 @@ Read `docs/devlog/summary.md` and `docs/architecture/ARCHITECTURE.md` before sta
 - TDD for behavior changes: tests first, testing the contract (app experience and mechanisms), not the code.
 - File size: keep every file under 500 LOC (hard ceiling 1000) — split god-objects by lifecycle/role.
 
-## Known traps
-
-- Visual changes verify with before screenshot → change → after screenshot → pixel diff, alongside the normal gates.
-- Debugging sessions record their process in a new file per session from `docs/debugging/template.md`; if a later session invalidates an old conclusion, update the old doc; clean up temporary dumps when done.
-
 ## Conventions
 
 - Devlog: `docs/devlog/summary.md` (one line per task; compact past 50 lines) + `docs/devlog/detailed/START_DATE_END_DATE.md` (per-task entry; archive via `git mv` when the active file passes 500 lines, starting a new file dated today).
