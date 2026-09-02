@@ -112,6 +112,18 @@ describe('stampLine', () => {
   });
 });
 
+/**
+ * Source-over compositing is not idempotent below full opacity: paint one pixel twice at 50%
+ * and it reads darker than its neighbours. So when a Bresenham walk is chained across drag
+ * segments, the start pixel of every segment after the first is the end pixel of the previous
+ * one, and painting endpoint-inclusive segments back to back stipples the stroke with
+ * double-composited joins — one per mousemove, so the artifact scales with sampling rate and
+ * is worst on the slowest machines.
+ *
+ * A chained walk must therefore exclude its start; the gesture's opening dot is placed once,
+ * by mousedown. Idempotent operations (the eraser writes 0,0,0,0) do not strictly need this,
+ * but they use the same shape so the two paths cannot drift.
+ */
 describe('stampLineFrom (M7: chained-segment opacity)', () => {
   it('skips the start pixel so chained segments do not double-composite the join', () => {
     // Simulate a mouse-drag over two segments. The drag's first pixel was

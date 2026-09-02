@@ -6,12 +6,19 @@ import { decodeImport } from '../../src/io/file';
 import { projectToJson, projectFromJson } from '../../src/core/serialize/project';
 
 /**
- * Regression tests for B1: two strokes followed by save/reload must keep
- * both strokes. Before the fix, `editedFrames` was materialized on the
- * first commit and never updated, so stroke #2 was dropped on save.
+ * When one buffer is the authoritative thing that gets serialized and the user edits through
+ * a different handle onto the same pixels, the two must be re-synced on every mutation —
+ * never materialized once and then left to implicit aliasing. First-edit materialization
+ * always looks correct: stroke one survives the round trip, so the feature reads as done,
+ * while strokes two onward are dropped silently at save time with nothing to catch it but a
+ * user noticing their work is gone.
  *
- * Covers all four source kinds: imported PNG sheet, imported GIF
- * sequence, blank sheet, blank sequence.
+ * Sync explicitly at every commit point — stroke, undo, redo — and the class disappears. Note
+ * which test can hold the claim: a single-stroke round trip cannot see this bug at all, and
+ * an N-stroke round trip is the cheapest thing that can.
+ *
+ * Covers all four source kinds: imported PNG sheet, imported GIF sequence, blank sheet,
+ * blank sequence.
  */
 describe('save/reload after multiple strokes — B1 regression', () => {
   beforeEach(() => resetStore());

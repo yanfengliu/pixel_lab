@@ -19,7 +19,66 @@ function patchRGBA(
   return out;
 }
 
+/**
+ * Keep the compositing rules — disposal modes, delay normalization, frame accumulation — in a
+ * pure function over a small plain struct, with the decoder library glued on in a thin
+ * adapter around it. Every test below is a consequence of that: describing a disposal-mode
+ * edge case as four literal objects takes a line each, while reaching the same case through
+ * `decodeGif` means hand-authoring a valid LZW-compressed GIF, which is why suites that go
+ * that route test one happy path and leave the rules uncovered.
+ *
+ * Purity is the load-bearing half and is asserted directly here. A compositor that writes
+ * back into the caller's patches is not re-runnable: the second call sees different input and
+ * quietly produces a different answer, so any retry, replay, or memo built on top of it is
+ * wrong in a way that reproduces only on the second run.
+ *
+ * `compositeGifFrames` must therefore stay exported and reachable without GIF bytes. Folding
+ * it back into `decodeGif` puts every rule below behind a fixture again.
+ */
 describe('compositeGifFrames', () => {
+  it('does not write back into the caller\'s patches', () => {
+    const patch = patchRGBA(255, 0, 0, 255, 2, 2);
+    const before = Uint8ClampedArray.from(patch);
+    const dims = { left: 0, top: 0, width: 2, height: 2 };
+    compositeGifFrames(
+      [
+        { patch, dims, delay: 5, disposalType: 1 },
+        { patch, dims, delay: 5, disposalType: 2 },
+        { patch, dims, delay: 5, disposalType: 3 },
+      ],
+      2,
+      2,
+    );
+    expect(
+      Array.from(patch),
+      'compositing must not consume or clear the patch it was handed',
+    ).toEqual(Array.from(before));
+  });
+
+  it('composites the same patches to the same pixels on a second call', () => {
+    const frames: GifFramePatch[] = [
+      {
+        patch: patchRGBA(255, 0, 0, 255, 2, 2),
+        dims: { left: 0, top: 0, width: 2, height: 2 },
+        delay: 5,
+        disposalType: 2,
+      },
+      {
+        patch: patchRGBA(0, 0, 255, 128, 2, 2),
+        dims: { left: 0, top: 0, width: 2, height: 2 },
+        delay: 0,
+        disposalType: 1,
+      },
+    ];
+    const first = compositeGifFrames(frames, 2, 2);
+    const second = compositeGifFrames(frames, 2, 2);
+    expect(second.map((f) => f.delayMs)).toEqual(first.map((f) => f.delayMs));
+    expect(
+      second.map((f) => Array.from(f.image.data)),
+      'a second run over the same input must land on the same pixels',
+    ).toEqual(first.map((f) => Array.from(f.image.data)));
+  });
+
   it('returns one DecodedGifFrame per patch with centiseconds -> ms', () => {
     const frames: GifFramePatch[] = [
       {

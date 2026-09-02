@@ -1,9 +1,10 @@
 # Devlog summary
 
-**Last updated:** 2026-04-25
+**Last updated:** 2026-09-02
 
 ## Sessions
 
+- 2026-09-02: All 12 lessons retired from `lessons.md` / `lessons-evidence.md` into enforced gates, prose deleted in the same commit. 9 already had gates, 2 got new ones (`test/architecture/browser-runtime.test.ts` for the Vite `Buffer` trap, `test/architecture/layering.test.ts` for the `app → ui → io → core` arrow), 1 promoted to `docs/learning/canon-candidates.md`; none dropped. Every gate was mutation-proved red against the real defect and reverted green — 18 proofs recorded in `docs/learning/gate-proofs.md`. Three gates believed to cover their lesson did not, and were strengthened: the `stampLineFrom` unit test never reached the drag call site (the full 325-test suite passed with the defect live), the onion-skin I7 test was satisfied by the main canvas redrawing, and the re-decode cache was caught only by a fixture accident. Suite 40 → 42 files, 314 → 327 tests; typecheck, build, and real-browser smoke green.
 - 2026-08-07: Lessons split into a 26-line index and `docs/learning/lessons-evidence.md` (12 entries, verbatim). The entry titles were already claim-shaped, so index lines are those titles with their trailing dates stripped — no paraphrasing, so nothing can drift from what the evidence says. `test/lessons-pairing.test.ts` pins both directions plus its own non-vacuity; suite green at 40 files / 314 tests. Note for a later session: this file is a status document, which the canon says a devlog must not be — it is history, not status.
 
 ## Current state

@@ -33,6 +33,17 @@ function stubRect(overlay: Element) {
   });
 }
 
+/**
+ * React decides whether an effect re-runs by comparing dependency references. A buffer that
+ * is mutated in place never changes reference, so an effect keyed on it fires once and then
+ * never again — the DOM keeps showing pre-mutation pixels until some unrelated re-render
+ * happens to refresh it. Undo and redo are where users notice: the operation ran, the data
+ * changed, the screen did not.
+ *
+ * So every effect consuming a mutable buffer needs a monotonic counter in its deps, bumped at
+ * the site of the mutation and threaded down to child canvases. Reference equality cannot
+ * work for a buffer whose whole purpose is being written through.
+ */
 describe('Canvas — reactivity (I2 regression)', () => {
   beforeEach(() => {
     resetStore();
@@ -138,18 +149,27 @@ describe('Canvas — reactivity (I2 regression)', () => {
       .getState()
       .project.sources.find((x) => x.id === src.id)!;
     const frame1 = useStore.getState().prepared[src.id]!.frames[1]!;
+    const frame0 = useStore.getState().prepared[src.id]!.frames[0]!;
     render(
       <Canvas source={source} bitmap={frame1} zoom={1} onSlicingChange={() => {}} />,
     );
-    const before = drawMock.mock.calls.length;
+    // Count only the ghost's own draws. A bare `drawMock.mock.calls.length` is satisfied by
+    // the *main* canvas redrawing — it consumes the same counter — so it stays green with the
+    // onion-skin layer's dep wired to a constant, which is precisely the bug this guards.
+    // Each layer is identified by the image it draws.
+    const ghostDraws = () =>
+      drawMock.mock.calls.filter((c) => c[1] === frame0).length;
+    const before = ghostDraws();
     // Edit frame 0 (the onion-skin ghost). The Canvas still displays
     // frame 1 but the onion-skin layer must refresh with the new pixels.
     act(() => {
       const commit = useStore.getState().beginStroke(src.id, 0);
-      const frame0 = useStore.getState().prepared[src.id]!.frames[0]!;
       setPixel(frame0, 2, 2, 111, 222, 33, 255);
       commit();
     });
-    expect(drawMock.mock.calls.length).toBeGreaterThan(before);
+    expect(
+      ghostDraws(),
+      'the onion-skin ghost must redraw when the frame it displays is edited in place',
+    ).toBeGreaterThan(before);
   });
 });

@@ -30,6 +30,7 @@ Violations are blockers in code review.
 ### `src/app/` — composition root
 
 - `src/main.tsx` + `src/app/App.tsx`. Mounts `ui/Shell` into `#root` and loads styles. No business logic; no state ownership.
+- Both halves of that are enforced rather than merely documented: `test/architecture/layering.test.ts` fails any import running upward through `main → app → ui → io → core`, and any state store defined under `app/`.
 
 ## Data model
 

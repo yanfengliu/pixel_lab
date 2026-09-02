@@ -76,6 +76,16 @@ describe('Canvas — pencil tool', () => {
     expect(useStore.getState().undoStacks[src.id] ?? []).toHaveLength(1);
   });
 
+  /**
+   * Any element that exists only to be looked at must declare `pointer-events: none`, never
+   * rely on the default `auto`. A stacked visual layer is the topmost hit target in a real
+   * browser and silently eats every click meant for the interactive layer beneath it.
+   *
+   * A unit test cannot see that on its own: `fireEvent` dispatches straight at the element
+   * you name, with no hit test and no z-order, so the handler runs and the suite stays green
+   * while the shipped app is dead to the touch. This test asserts the invariant directly
+   * instead — the only way a jsdom suite can hold a claim about stacking.
+   */
   it('canvas-image does not capture mouse events (lets clicks reach paint-overlay)', () => {
     // Regression for the post-merge BLOCKER: the canvas-image <canvas>
     // had position:relative + zIndex:1 but default pointer-events:auto,
@@ -103,6 +113,16 @@ describe('Canvas — pencil tool', () => {
     expect(post.data[(1 * post.width + 1) * 4 + 3]).toBe(0);
   });
 
+  /**
+   * The browser does not guarantee mouseup delivery: let the cursor leave the window with the
+   * button held and the up event never arrives. Drag state then outlives the gesture that
+   * owned it, and the next move — button-free, possibly much later — is processed as a
+   * continuation of a stroke the user finished long ago.
+   *
+   * So every window-level move handler that acts on drag state must check `ev.buttons === 0`
+   * and end the drag itself. Tests firing `mouseMove` have to pass `buttons: 1`, or they
+   * model the lost-mouseup case rather than an ordinary drag.
+   */
   it('lost mouseup mid-drag: a later button-less mousemove does not stretch the stroke across the canvas', () => {
     // Regression: the browser occasionally drops mouseup (e.g., when the
     // cursor leaves the window mid-drag). Without the ev.buttons === 0
@@ -146,6 +166,42 @@ describe('Canvas — pencil tool', () => {
     // Still no line-interior pixels.
     expect(bmp.data[(5 * bmp.width + 5) * 4 + 3]).toBe(0);
     expect(bmp.data[(8 * bmp.width + 8) * 4 + 3]).toBe(0);
+  });
+
+  /**
+   * The unit test on `stampLineFrom` proves the start-excluded walk is correct; it cannot
+   * prove the drag handler calls it. Knowing the right primitive exists and reaching for it at
+   * the one call site that matters are separate facts, and only the second one is what the
+   * user sees — the original defect was a correct primitive invoked the wrong way.
+   *
+   * So drive it through the component: one gesture, several moves, opacity below 1. Every
+   * pixel of a single-width stroke must end up at the same alpha, because each was composited
+   * exactly once. Segment joins darkening into a dotted line is the failure.
+   */
+  it('a multi-segment pencil drag at opacity < 1 composites every join exactly once (M7)', () => {
+    useStore.getState().setActiveTool('pencil');
+    useStore.getState().setPrimaryColor({ r: 255, g: 0, b: 0, a: 255 });
+    useStore.getState().setBrushSize(1);
+    useStore.getState().setOpacity(0.5);
+    const { bmp, container } = mountForSheet({ w: 16, h: 4 });
+    const overlay = container.querySelector('.paint-overlay')!;
+    stubRect(overlay);
+
+    // One drag, delivered as the browser would: mousedown then a move per sampled position.
+    // (5,0) and (10,0) are joins — the end of one segment and the start of the next.
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 0.5, clientY: 0.5, buttons: 1 });
+    fireEvent.pointerMove(overlay, { clientX: 5.5, clientY: 0.5, buttons: 1 });
+    fireEvent.pointerMove(overlay, { clientX: 10.5, clientY: 0.5, buttons: 1 });
+    fireEvent.pointerMove(overlay, { clientX: 15.5, clientY: 0.5, buttons: 1 });
+    fireEvent.pointerUp(overlay);
+
+    const alphas = Array.from({ length: 16 }, (_, x) => bmp.data[x * 4 + 3]!);
+    // Anti-vacuity: an all-transparent row would trivially be "uniform".
+    expect(Math.min(...alphas), 'the drag must have painted the whole row').toBeGreaterThan(0);
+    expect(
+      [...new Set(alphas)],
+      'every pixel of a 1px stroke composites once; darker joins mean the chained segments re-painted their start pixel',
+    ).toHaveLength(1);
   });
 });
 
@@ -396,6 +452,17 @@ describe('Canvas — slice-rect tool', () => {
     expect(slicing.rects[0]).toEqual({ x: 1, y: 2, w: 5, h: 5 });
   });
 
+  /**
+   * A global shortcut that mutates state an in-flight gesture is holding will corrupt that
+   * gesture's record of what it did. Undo mid-stroke rewrites the paint target underneath the
+   * running drag; the drag's own commit then diffs against that rewritten "after" and stores
+   * the union of the abandoned undo and the live stroke as one delta — data loss with no
+   * error anywhere.
+   *
+   * Guard at the action site, not at the keymap: a session-only `isDragging` flag checked
+   * inside `undo`/`redo` also covers programmatic callers, which a keymap guard never does.
+   * The same applies to any gesture holding mutable state — multi-frame edits, async saves.
+   */
   it('Ctrl+Z mid-drag is a no-op (isDragging gates undo) (M8)', () => {
     // Mid-drag undo would mutate the bitmap underneath the in-flight stroke
     // and the eventual commit would record a corrupted delta. After the
@@ -431,6 +498,16 @@ describe('Canvas — slice-rect tool', () => {
     expect(useStore.getState().sheetBitmaps[src.id]!.data[(1 * 16 + 1) * 4 + 3]).toBe(0);
   });
 
+  /**
+   * The render-counter rule covers every reactive primitive that reads a mutable buffer, not
+   * just `useEffect`. A `useMemo`, `useCallback`, or selector keyed on a buffer that is
+   * mutated in place never re-runs, because the reference it compares is stable by design —
+   * that stability is the whole point of mutating in place. Include the per-source counter in
+   * the deps of anything that reads pixel data.
+   *
+   * And when such a memo also detects an error, return it as a value: firing `setState` from
+   * inside a memo factory runs during render and breaks under StrictMode.
+   */
   it('rects overlay refreshes when paint opens a previously-empty grid cell (M3)', () => {
     // 8x8 blank sheet sliced 4x4 cells = 4 cells, all transparent → 0 rects.
     // Painting into one cell should make exactly one rect appear in the

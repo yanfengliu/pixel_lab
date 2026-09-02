@@ -78,6 +78,52 @@ describe('store', () => {
     expect(prepared.frames[0]!.width).toBe(4);
   });
 
+  /**
+   * A one-time decode must be cached beside the id it belongs to and re-used, never redone
+   * because a derived value changed. Slicing controls fire on every keystroke, so re-decoding
+   * there turns one cheap edit into a full PNG decode per character typed — and it silently
+   * makes the encoded bytes a live dependency of an operation with no business reading them,
+   * which breaks every caller that holds a decoded image but no original file.
+   *
+   * The poisoned bytes below are the instrument: with the cache in place nothing reads them,
+   * so they can be garbage; any re-decode reaches for them and fails loudly. A fixture that
+   * happens to pass empty or fake bytes catches this by accident only — this does it on
+   * purpose, and says so, so nobody "fixes" the fixture and quietly removes the check.
+   */
+  it('updateSlicing re-crops the cached bitmap and never re-decodes imageBytes', () => {
+    const img = createImage(16, 16);
+    setPixel(img, 0, 0, 255, 0, 0, 255);
+    setPixel(img, 8, 0, 0, 255, 0, 255);
+    const bytes = encodePng(img);
+    const src = useStore.getState().addSource('walk.png', {
+      kind: 'sheet',
+      format: 'png',
+      frames: [img],
+      delaysMs: [],
+      bytes,
+    });
+    // Destroy the encoded bytes in place. The decoded bitmap is already cached in
+    // sheetBitmaps, so a correct re-slice never looks at these again.
+    bytes.fill(0);
+
+    for (const cols of [2, 4, 8]) {
+      expect(
+        () =>
+          useStore.getState().updateSlicing(src.id, {
+            kind: 'grid',
+            cellW: 16 / cols,
+            cellH: 16,
+            offsetX: 0,
+            offsetY: 0,
+            rows: 1,
+            cols,
+          }),
+        `re-slicing to ${cols} cols must re-crop the cached bitmap, not decode imageBytes`,
+      ).not.toThrow();
+    }
+    expect(useStore.getState().prepared[src.id]!.frames.length).toBeGreaterThan(0);
+  });
+
   it('beginStroke commit and undo/redo do not throw with an invalid slicing in flight (RC2.3)', () => {
     // updateSlicing is best-effort: an in-progress invalid slicing config
     // is recorded so the user can iterate. Subsequent paint commits and

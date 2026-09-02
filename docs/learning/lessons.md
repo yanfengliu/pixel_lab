@@ -1,24 +1,15 @@
 # Lessons
 
-The one-line form of every lesson this repo has paid for. Read this file at session start; it is short by construction.
+A staging area, not a destination. Read it at session start; it is short by construction, and empty is the healthy state.
 
-Each rule links into [lessons-evidence.md](lessons-evidence.md), which holds the context, the durable rule, and the pointer to the code or test. Open that only when a rule is in doubt, or the work is in that area — it is not session-start reading.
+A lesson lands here the session it is learned, anchored to a measurement, commit, or test id — unanchored, it is folklore. One line here plus one entry in [lessons-evidence.md](lessons-evidence.md), which holds the context, the durable rule, and the pointer to the code. `test/lessons-pairing.test.ts` keeps the two in step: a rule always has an entry, an entry always has a rule, and the two halves empty together.
 
-A new lesson is an entry there plus one line here. `test/lessons-pairing.test.ts` keeps the two in step: a rule always has an entry, and an entry always has a rule.
+It leaves as soon as it becomes a gate. A lesson ships WITH the test, lint rule, schema check, or fixed command that prevents its recurrence, in the same commit, and then both prose halves are deleted — the machine enforces it, so nobody has to remember to read it. Knowledge with no mechanical trigger is promoted into the fleet constitution instead; anything that fits neither was folklore and is dropped.
 
-When a lesson becomes a gate — a test, a lint rule, a fixed command — delete both halves. The machine enforces it, so nobody needs to read it.
+A gate only counts once it has been made to go red by reintroducing the defect. [gate-proofs.md](gate-proofs.md) records those proofs — the mutation, the failure it produced, and the green after revert — and is the standing answer to whether the gates actually do their job.
+
+On 2026-09-02 the twelve lessons then standing were retired this way: nine were already gated, two got new gates, and one was promoted. Their claims now live in the headers of the gates that enforce them.
 
 ## Rules
 
-- Documented invariants must be enforced at the state boundary, not at the consumer ([evidence](lessons-evidence.md#documented-invariants-must-be-enforced-at-the-state-boundary-not-at-the-consumer--2026-04-25))
-- `useMemo` that depends on an in-place-mutated buffer needs a render counter in its deps ([evidence](lessons-evidence.md#usememo-that-depends-on-an-in-place-mutated-buffer-needs-a-render-counter-in-its-deps--2026-04-25))
-- Chained `stampLine` calls double-composite the join when opacity < 1 — use a start-excluded variant ([evidence](lessons-evidence.md#chained-stampline-calls-double-composite-the-join-when-opacity--1--use-a-start-excluded-variant--2026-04-25))
-- Mid-drag global shortcuts must guard on a drag flag ([evidence](lessons-evidence.md#mid-drag-global-shortcuts-must-guard-on-a-drag-flag--2026-04-25))
-- Browsers drop mouseup when the cursor leaves the window — guard onMove with ev.buttons === 0 ([evidence](lessons-evidence.md#browsers-drop-mouseup-when-the-cursor-leaves-the-window--guard-onmove-with-evbuttons--0--2026-04-24))
-- jsdom + fireEvent bypasses z-order, so visual layout bugs look green ([evidence](lessons-evidence.md#jsdom--fireevent-bypasses-z-order-so-visual-layout-bugs-look-green--2026-04-24))
-- Serialized state must be refreshed on every mutation, not just the first ([evidence](lessons-evidence.md#serialized-state-must-be-refreshed-on-every-mutation-not-just-the-first--2026-04-24))
-- In-place mutations need an explicit render signal for React ([evidence](lessons-evidence.md#in-place-mutations-need-an-explicit-render-signal-for-react--2026-04-24))
-- Node `Buffer` is not polyfilled by Vite; pngjs/browser needs the `buffer` shim ([evidence](lessons-evidence.md#node-buffer-is-not-polyfilled-by-vite-pngjsbrowser-needs-the-buffer-shim--2026-04-24))
-- Don't put a global state store in `app/` if UI imports from it ([evidence](lessons-evidence.md#dont-put-a-global-state-store-in-app-if-ui-imports-from-it--2026-04-24))
-- Cache decoded sheet bitmaps; never re-decode on every slicing change ([evidence](lessons-evidence.md#cache-decoded-sheet-bitmaps-never-re-decode-on-every-slicing-change--2026-04-24))
-- Keep GIF compositing pure so tests avoid fixture GIFs ([evidence](lessons-evidence.md#keep-gif-compositing-pure-so-tests-avoid-fixture-gifs--2026-04-23))
+_(none — every lesson learned so far has graduated to a gate or to the constitution)_
