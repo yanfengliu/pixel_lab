@@ -106,6 +106,17 @@ Three of the gates named here did **not** catch their defect on the first attemp
 
 ---
 
+## The staging area itself: a lesson is both halves or neither
+
+Not one of the twelve, but rewritten in the same commit, so it is proved here too. `test/lessons-pairing.test.ts` previously asserted that both live files parsed at least one entry — which is a correct check right up until the staging area is legitimately empty, at which point it fails on healthy files. Its non-vacuity guard moved onto a fixture, so the parsers stay proved once the real files are empty, and a half-emptied staging area became its own check.
+
+- **Gate:** `test/lessons-pairing.test.ts` :: `points every rule at an evidence entry that exists` and `empties or populates the two halves together` — run by `npm test`
+- **Mutation:** added a rule line to the emptied `docs/learning/lessons.md` with no matching entry in `lessons-evidence.md`
+- **Red:** `lessons.md links to headings that do not exist in the evidence file: expected [ 'a-rule-someone-added--2026-09-02' ] to deeply equal []`, and `lessons.md holds 1 rule(s) and lessons-evidence.md 0 entry(ies); a lesson is both halves or neither: expected false to be true`
+- **Green after revert:** yes
+
+---
+
 ## Not gated: promoted instead
 
 `Documented invariants must be enforced at the state boundary, not at the consumer` has no mechanical trigger — it is a rule about where to put a check, not a check. Its three concrete instances in this repo are gated (`test/ui/store.test.ts`: FrameRef reconcile on re-slice, `validateFps` clamping, `loadProject` sequence completeness), but those gate the instances, not the class. The transferring claim is staged in `canon-candidates.md` for promotion into the fleet constitution.
