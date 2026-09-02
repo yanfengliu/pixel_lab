@@ -1,10 +1,10 @@
 // Playwright-driven smoke test for the pixel drawing flow.
-// Runs against an already-running `npm run dev` server at 127.0.0.1:5173.
+// Runs against an already-running `npm run dev` server on port 5173.
 // Exits 0 on success, nonzero on any assertion failure.
 //
 // This is NOT part of the vitest suite. Run it manually:
 //   npm run dev &  (or in another terminal)
-//   node test/smoke/drawing-smoke.mjs
+//   npm run smoke
 //
 // It clicks through: open New Blank dialog, create a 32x32 x 4-frame
 // animation, pick Pencil, drag to paint a short stroke on the first
@@ -19,7 +19,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = join(__dirname, 'screenshots');
 await mkdir(OUT, { recursive: true });
 
-const URL = process.env.SMOKE_URL ?? 'http://127.0.0.1:5173/';
+// `localhost` is not one address. Vite binds the name, which resolves to `::1`
+// on some machines and to `127.0.0.1` on others, so a probe pinned to a single
+// loopback literal reports "the dev server is down" while the dev server is up
+// and answering on the other one. Try every candidate; use whichever answers.
+const SMOKE_PORT = process.env.SMOKE_PORT ?? '5173';
+const CANDIDATE_URLS = process.env.SMOKE_URL
+  ? [process.env.SMOKE_URL]
+  : [
+      `http://localhost:${SMOKE_PORT}/`,
+      `http://127.0.0.1:${SMOKE_PORT}/`,
+      `http://[::1]:${SMOKE_PORT}/`,
+    ];
 
 function log(step, msg) {
   process.stdout.write(`[smoke ${step}] ${msg}\n`);
@@ -32,13 +43,30 @@ async function assert(cond, msg) {
   }
 }
 
-// Readiness probe — fail fast with a clear message if dev server is down.
-try {
-  const probe = await fetch(URL);
-  if (!probe.ok) throw new Error(`status ${probe.status}`);
-} catch (err) {
+// Readiness probe — fail fast, and name every address actually tried. A bare
+// "fetch failed" cannot tell the reader which host was refused, which is the
+// one thing they need in order to act on it.
+async function resolveBaseUrl(candidates) {
+  const refusals = [];
+  for (const candidate of candidates) {
+    try {
+      const probe = await fetch(candidate);
+      if (probe.ok) return { url: candidate, refusals };
+      refusals.push(`${candidate} answered HTTP ${probe.status}`);
+    } catch (err) {
+      refusals.push(`${candidate} refused the connection (${err.cause?.code ?? err.message})`);
+    }
+  }
+  return { url: null, refusals };
+}
+
+const { url: BASE_URL, refusals } = await resolveBaseUrl(CANDIDATE_URLS);
+if (!BASE_URL) {
   process.stderr.write(
-    `Smoke test requires the dev server. Start it first: \`npm run dev\` (then re-run \`npm run smoke\`). Probe error: ${err.message}\n`,
+    `Smoke test could not reach a dev server on port ${SMOKE_PORT}. Tried:\n` +
+      refusals.map((line) => `  - ${line}\n`).join('') +
+      `Start one with \`npm run dev\`, then re-run \`npm run smoke\`. ` +
+      `To use a server elsewhere, set SMOKE_URL=http://host:port/ or SMOKE_PORT=<port>.\n`,
   );
   process.exit(2);
 }
@@ -54,11 +82,11 @@ page.on('console', (msg) => {
   if (msg.type() === 'error') process.stderr.write(`[console error] ${msg.text()}\n`);
 });
 
-log('1', `loading ${URL}`);
+log('1', `loading ${BASE_URL}`);
 // `domcontentloaded` is more deterministic than `networkidle` when Vite's
 // HMR keeps a websocket open (which counts as in-flight network traffic
 // and can prevent `networkidle` from resolving promptly).
-await page.goto(URL, { waitUntil: 'domcontentloaded' });
+await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.tool-palette', { timeout: 5000 });
 
 log('2', 'assert tool palette is rendered');
