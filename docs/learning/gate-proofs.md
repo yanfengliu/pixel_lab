@@ -2,6 +2,18 @@
 
 A gate nobody has seen fail is a claim, not a check. Every entry below records a gate that was made to go red by reintroducing — in product code, never in the test — the exact defect its lesson describes, then reverted and confirmed green. A lesson whose prose was deleted without one of these entries would be knowledge silently thrown away.
 
+
+## If a gate here is wrong
+
+A gate and the claim in its header can be wrong together, and when they are they look exactly like a gate that is right: retiring 356 lessons across this fleet found 43 that named a defect their own named test did not catch. Auditing one means reaching what was actually believed, measured, and abandoned — never the sentence the gate carries about itself, which is the same self-agreement these gates exist to catch.
+
+That evidence was deleted in the retirement commits, not lost. This repo's evidence file as it stood immediately before, all 13 entries with their anchors:
+
+    git show c09a189:docs/learning/lessons-evidence.md
+
+`git log -- docs/learning/lessons-evidence.md` lists every earlier revision, and `git log -S'<phrase from the gate header>' -- docs/learning/` finds the entry a particular gate came from.
+
+
 All proofs on this page were run on 2026-09-02, when the twelve standing lessons in `lessons.md` were retired into gates. Node 24.18.1, vitest 2.1.9. Each gate is run by `npm test`.
 
 Three of the gates named here did **not** catch their defect on the first attempt and had to be strengthened; those are called out in place, because a gate that was once blind is the most useful thing on this page.
