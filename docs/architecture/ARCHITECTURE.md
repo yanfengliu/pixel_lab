@@ -34,7 +34,7 @@ Violations are blockers in code review.
 
 ## Data model
 
-See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` for the v1 schema and `docs/superpowers/specs/2026-04-24-pixel-drawing-design.md` for the v2 extensions. Key invariants:
+See `docs/work/0_pixel-lab/historical/superpowers/specs/2026-04-23-pixel-lab-design.md` for the v1 schema and `docs/work/1_pixel-drawing/historical/superpowers/specs/2026-04-24-pixel-drawing-design.md` for the v2 extensions. Key invariants:
 
 - A `Project` owns a list of `Source`s and a list of `Animation`s. Project file format is v2 since 2026-04-24 (KAD-006 + KAD-007).
 - `Source.kind` describes *structure* (KAD-006):
@@ -61,4 +61,4 @@ The manifest schema is exposed as a public package subpath: external consumers (
 - Integration — `core/` + `io/` round-trips via jsdom.
 - Visual — `ui/` golden PNG pixel diffs.
 
-See `docs/superpowers/specs/2026-04-23-pixel-lab-design.md` § Testing.
+See `docs/work/0_pixel-lab/historical/superpowers/specs/2026-04-23-pixel-lab-design.md` § Testing.

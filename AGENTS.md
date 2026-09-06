@@ -124,6 +124,4 @@ Read `docs/devlog/summary.md` and `docs/architecture/ARCHITECTURE.md` before sta
 - Changelog `docs/changelog.md` + `package.json` version (external audience, migration focus): bump `c` per non-breaking change, `b` (reset `c`) per breaking change, `a` only when the user says so; one bump per coherent shipped change; pure refactors/doc sweeps bump nothing.
 - Architecture: structural changes update `docs/architecture/ARCHITECTURE.md` and append a row to `docs/architecture/drift-log.md`; non-obvious tradeoffs append to `docs/architecture/decisions.md` (append-only — supersede, never delete); non-structural fixes touch none of these.
 - Lessons: `docs/learning/lessons.md` per the fleet evidence-anchor rule; code lessons need a real test node id.
-- Review threads: syntheses land in `docs/threads/current/<objective>/<date>/<n>/REVIEW.md` (synthesis only — no raw CLI output; temp captures go to gitignored `tmp/review-runs/`; the legacy iteration under `docs/threads/done/full/` keeps its `raw/` files); move the objective to `docs/threads/done/` when closed.
-- Design specs and plans live under `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 - README updates when public surface or user-visible features change.

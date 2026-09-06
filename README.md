@@ -95,6 +95,6 @@ Drawing tools follow Aseprite conventions. Shortcuts are bare keys (no modifiers
 
 ## Docs
 
-- Design spec: `docs/superpowers/specs/2026-04-23-pixel-lab-design.md`
+- Design spec: `docs/work/0_pixel-lab/historical/superpowers/specs/2026-04-23-pixel-lab-design.md`
 - Architecture: `docs/architecture/ARCHITECTURE.md`
 - Devlog: `docs/devlog/summary.md`

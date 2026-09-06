@@ -2,6 +2,8 @@
 
 **Last updated:** 2026-09-02
 
+- 2026-09-05: Moved 4 historical work units (13 source files) to numbered docs/work folders; preserved original review rounds and source provenance, and updated live documentation pointers. Migration coordination: ../fleet/docs/work/3_numbered-work-docs/plan.md.
+
 ## Sessions
 
 - 2026-09-02: `npm run smoke` could not reach a dev server that was running. Its readiness probe hardcoded `http://127.0.0.1:5173/`, but Vite binds the name `localhost`, which resolves to `::1` on this machine — so `fetch` took ECONNREFUSED on the v4 literal while `http://localhost:5173/` returned 200, and the gate reported "dev server not running" while it was running. The probe now tries `localhost`, `127.0.0.1`, and `[::1]` in turn and uses whichever answers; `SMOKE_URL` still overrides and `SMOKE_PORT` was added. The failure message now lists every address tried and what each one did, because "Probe error: fetch failed" names neither the host that refused nor what would satisfy it. Verified with no env override: all 13 steps green in a real browser.

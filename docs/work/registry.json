@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "allocations": [
+    {
+      "id": 0,
+      "theme": "pixel-lab",
+      "legacyFiles": [
+        {
+          "path": "historical/superpowers/plans/2026-04-23-pixel-lab-plan.md",
+          "sha256": "0c1f97f061fe3fda28446f22ddaa074098c968e9d3631ac249dd75706da8f4dd",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/plans/2026-04-23-pixel-lab-plan.md"
+        },
+        {
+          "path": "historical/superpowers/specs/2026-04-23-pixel-lab-design.md",
+          "sha256": "f6835581c1afd6ff9cfdaecb1b5db86f8411362190512eb42eb0070c62757a70",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/specs/2026-04-23-pixel-lab-design.md"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "theme": "pixel-drawing",
+      "legacyFiles": [
+        {
+          "path": "historical/superpowers/plans/2026-04-24-pixel-drawing-foundation.md",
+          "sha256": "9f2c615afddfac8e1c0cb231dc625bd6fd00fed6a13a0152488e27fe2fd03d15",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/plans/2026-04-24-pixel-drawing-foundation.md"
+        },
+        {
+          "path": "historical/superpowers/plans/2026-04-24-pixel-drawing-polish.md",
+          "sha256": "1b59386383aace7270959c48a261d9f12d8605cac77cd97c408045b22417f70a",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/plans/2026-04-24-pixel-drawing-polish.md"
+        },
+        {
+          "path": "historical/superpowers/plans/2026-04-24-pixel-drawing-shapes-selection.md",
+          "sha256": "79f3e8de501484ba4d1e8fa0c8aee7de99caa705a59239473006c3e761225b35",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/plans/2026-04-24-pixel-drawing-shapes-selection.md"
+        },
+        {
+          "path": "historical/superpowers/specs/2026-04-24-pixel-drawing-design.md",
+          "sha256": "66c135bf0192a4b8223cc66ea984df795b99223d93c3ca48ff3cc59e39db5839",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/specs/2026-04-24-pixel-drawing-design.md"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "theme": "full",
+      "legacyFiles": [
+        {
+          "path": "historical/threads/done/full/2026-04-25/1/PROMPT.md",
+          "sha256": "4e336af043a026c3b5e512c81a7a0f0a025d4ac65f86d0afc523cdf438621bc0",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/PROMPT.md"
+        },
+        {
+          "path": "historical/threads/done/full/2026-04-25/1/raw/claude.md",
+          "sha256": "b665203279e8d81f0df61bdfbd3dc09a880f6f3ac040eb6d35ef8dfa4033fd7a",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/raw/claude.md"
+        },
+        {
+          "path": "historical/threads/done/full/2026-04-25/1/raw/codex.md",
+          "sha256": "62fa4545da02d4c5637bff05a9e9a41807611fed8fa04b3b40c6bf246f230ad2",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/raw/codex.md"
+        },
+        {
+          "path": "historical/threads/done/full/2026-04-25/1/raw/gemini.md",
+          "sha256": "651b12dec324368c5235aabb564977fe2402fcfee639d01f435bf8db0e36f9c0",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/raw/gemini.md"
+        },
+        {
+          "path": "reviews/0_legacy.md",
+          "sha256": "eb78a2688d95cd63a0cf64894dbfd2aea46269db1545cb660baea17c5fe762b0",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/REVIEW.md"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "theme": "pixel-lab-idle-life-format-unification",
+      "legacyFiles": [
+        {
+          "path": "historical/superpowers/plans/2026-04-25-pixel-lab-idle-life-format-unification.md",
+          "sha256": "2c0d4aa14f4c1d1c8f270931cc659e5af32aa02f2737215e30eeff5b64cf0ab6",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/plans/2026-04-25-pixel-lab-idle-life-format-unification.md"
+        },
+        {
+          "path": "historical/superpowers/specs/2026-04-25-pixel-lab-idle-life-format-unification-design.md",
+          "sha256": "d2778bbd9fee502a58d6b1402d0b9256c9cd653a790c76657b7321e7baa708fa",
+          "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/superpowers/specs/2026-04-25-pixel-lab-idle-life-format-unification-design.md"
+        }
+      ]
+    }
+  ]
+}
