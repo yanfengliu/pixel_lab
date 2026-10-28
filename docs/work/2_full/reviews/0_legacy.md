@@ -2,7 +2,7 @@
 
 **Reviewers:** Codex (gpt-5.4, xhigh) · Gemini (gemini-3.1-pro-preview) · Claude Code (opus, xhigh) — all run agentically over the full workspace.
 
-**Raw outputs:** [`raw/codex.md`](../historical/threads/done/full/2026-04-25/1/raw/codex.md) · [`raw/gemini.md`](../historical/threads/done/full/2026-04-25/1/raw/gemini.md) · [`raw/claude.md`](../historical/threads/done/full/2026-04-25/1/raw/claude.md). Shared input prompt at [`PROMPT.md`](../historical/threads/done/full/2026-04-25/1/PROMPT.md).
+**Raw outputs:** [`raw/codex.md`](../historical/threads/done/full/2026-04-25/1/raw/codex.md) · [`raw/gemini.md`](../historical/threads/done/full/2026-04-25/1/raw/gemini.md) · [`raw/claude.md`](../historical/threads/done/full/2026-04-25/1/raw/claude-report.md). Shared input prompt at [`PROMPT.md`](../historical/threads/done/full/2026-04-25/1/PROMPT.md).
 
 ## Overall
 

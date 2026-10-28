@@ -53,7 +53,7 @@
           "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/PROMPT.md"
         },
         {
-          "path": "historical/threads/done/full/2026-04-25/1/raw/claude.md",
+          "path": "historical/threads/done/full/2026-04-25/1/raw/claude-report.md",
           "sha256": "b665203279e8d81f0df61bdfbd3dc09a880f6f3ac040eb6d35ef8dfa4033fd7a",
           "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/raw/claude.md"
         },
@@ -69,7 +69,7 @@
         },
         {
           "path": "reviews/0_legacy.md",
-          "sha256": "eb78a2688d95cd63a0cf64894dbfd2aea46269db1545cb660baea17c5fe762b0",
+          "sha256": "8edb4dd262d76af3755861c30804de5111841e94c24aa46817afc5a8e1f4dc7e",
           "source": "pixel_lab@fb34ed7ac99f0b4b43e0907db1c7bc7366022c0a:docs/threads/done/full/2026-04-25/1/REVIEW.md"
         }
       ]
