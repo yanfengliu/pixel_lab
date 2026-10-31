@@ -2,6 +2,7 @@
 
 **Last updated:** 2026-09-02
 
+- 2026-10-30: Start reading follows progressive disclosure: a session reads this summary's newest ten entries, and `docs/architecture/ARCHITECTURE.md` (4,206 bytes) is still read whole; the lessons file links fleet's `../fleet/canon-candidates.md` as the canon writes it, so the link holds from a worktree. Docs only.
 - 2026-10-28: Renamed the 2026-04-25 review's imported `raw/claude.md` to `raw/claude-report.md` (bytes unchanged), since on a case-insensitive disk Claude Code loads the old name as `CLAUDE.md` project instructions; its links follow it and `reviews/0_legacy.md`'s registry digest is its edited bytes'. Record: docs/work/2_full/plan.md; fleet sweep: ../fleet/docs/work/23_instruction-name-lookalikes/plan.md.
 - 2026-09-05: Moved 4 historical work units (13 source files) to numbered docs/work folders; preserved original review rounds and source provenance, and updated live documentation pointers. Migration coordination: ../fleet/docs/work/3_numbered-work-docs/plan.md.
 
